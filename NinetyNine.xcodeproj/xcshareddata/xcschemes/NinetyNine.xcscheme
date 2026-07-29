@@ -20,6 +20,20 @@
                ReferencedContainer = "container:NinetyNine.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A1000042"
+               BuildableName = "NinetyNineUITests.xctest"
+               BlueprintName = "NinetyNineUITests"
+               ReferencedContainer = "container:NinetyNine.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -35,6 +49,16 @@
                BlueprintIdentifier = "A1000041"
                BuildableName = "NinetyNineTests.xctest"
                BlueprintName = "NinetyNineTests"
+               ReferencedContainer = "container:NinetyNine.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A1000042"
+               BuildableName = "NinetyNineUITests.xctest"
+               BlueprintName = "NinetyNineUITests"
                ReferencedContainer = "container:NinetyNine.xcodeproj">
             </BuildableReference>
          </TestableReference>
