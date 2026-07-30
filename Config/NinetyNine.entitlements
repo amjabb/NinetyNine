@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Game Center, for turn-based online matches. This is the only entitlement
+	  the app needs: no push notifications, no iCloud, no background modes.
+
+	  Adding this requires the App ID in the developer portal to have Game Center
+	  enabled, and the app to be configured for Game Center in App Store Connect.
+	  Both are console steps — see Docs/MULTIPLAYER.md.
+	-->
+	<key>com.apple.developer.game-center</key>
+	<true/>
+</dict>
+</plist>
