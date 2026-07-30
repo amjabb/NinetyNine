@@ -15,6 +15,9 @@ struct WellRevealOverlay: View {
     /// Name of whoever is at the well, for the caption.
     let playerName: String
     let isHuman: Bool
+    /// Called with the slot the player picked, while choosing.
+    var onChoose: (Int) -> Void = { _ in }
+    var onCancel: () -> Void = {}
 
     @Environment(\.motion) private var motion
     @State private var shuffleOffset: CGFloat = 0
@@ -53,7 +56,7 @@ struct WellRevealOverlay: View {
                 .font(.system(size: 13, weight: .heavy))
                 .tracking(4)
                 .foregroundStyle(Palette.brassMid)
-            Text(isHuman ? "One card. No choice." : "\(playerName) reaches for the well.")
+            Text(isHuman ? captionForHuman : "\(playerName) reaches for the well.")
                 .font(Typography.title)
                 .foregroundStyle(Palette.ivory)
                 .multilineTextAlignment(.center)
@@ -62,11 +65,39 @@ struct WellRevealOverlay: View {
 
     // MARK: Cards
 
+    private var captionForHuman: String {
+        if case .choosing = phase { return "Pick one. You won't know until you turn it." }
+        return "One card. Everything rides on it."
+    }
+
     @ViewBuilder
     private var cardStage: some View {
         switch phase {
         case .idle:
             EmptyView()
+
+        case .choosing(_, let slots):
+            // Both face down, so the choice is blind — but it's the player's.
+            // Having the game pick made the tensest moment in the game something
+            // that happened *to* them.
+            HStack(spacing: 22) {
+                ForEach(0..<slots, id: \.self) { slot in
+                    Button {
+                        Haptics.shared.play(.cardFlick)
+                        onChoose(slot)
+                    } label: {
+                        CardBackView(isHighlighted: true)
+                            .frame(width: slots > 1 ? 132 : 156)
+                            .cardShadow(lift: 18)
+                            .rotationEffect(.degrees(slots > 1 ? (slot == 0 ? -5 : 5) : 0))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(slots > 1
+                        ? "Well card \(slot + 1) of \(slots)"
+                        : "Your last well card")
+                    .accessibilityHint("Turn this one over")
+                }
+            }
 
         case .rolling:
             // Two face-down cards trading places — you can see there's a choice
@@ -139,6 +170,17 @@ struct WellRevealOverlay: View {
     @ViewBuilder
     private var verdictText: some View {
         switch phase {
+        case .choosing:
+            Button(action: onCancel) {
+                Text("Not yet")
+                    .font(Typography.bodyEmphasised)
+                    .foregroundStyle(Palette.ivoryDim)
+                    .padding(.horizontal, 26)
+                    .padding(.vertical, 11)
+                    .background(Capsule().fill(.white.opacity(0.07)))
+            }
+            .buttonStyle(.plain)
+
         case .rolling:
             Text("Drawing…")
                 .font(Typography.sectionTitle)

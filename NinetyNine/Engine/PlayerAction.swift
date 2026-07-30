@@ -20,10 +20,10 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// Play a card from hand, resolved with the given declaration.
     case play(cardID: Int, declaration: Declaration)
 
-    /// Reveal one of the player's two well cards. The *result* is decided by the
-    /// authority — the client must not choose which card, or it could learn its
-    /// own well contents early.
-    case drawFromWell
+    /// Turn over one of the player's two face-down well cards. `slot` is which
+    /// one they chose — both are face down, so this leaks nothing; it is simply
+    /// left-or-right. The authority still owns what the card turns out to be.
+    case drawFromWell(slot: Int)
 
     /// Play the well card that has just been revealed.
     case resolveWell(declaration: Declaration)
@@ -102,8 +102,8 @@ extension GameEngine {
         case .play(let cardID, let declaration):
             return try play(cardID: cardID, by: playerID, declaration: declaration)
 
-        case .drawFromWell:
-            return try drawFromWell(by: playerID)
+        case .drawFromWell(let slot):
+            return try drawFromWell(by: playerID, slot: slot)
 
         case .resolveWell(let declaration):
             return try resolveWell(by: playerID, declaration: declaration)
@@ -156,7 +156,10 @@ extension GameEngine {
         }
 
         let options = currentPlayerOptions
-        if options.canUseWell { actions.append(.drawFromWell) }
+        if options.canUseWell {
+            // One action per slot, so the UI can offer both cards.
+            for slot in 0..<player.well.count { actions.append(.drawFromWell(slot: slot)) }
+        }
         if options.canSkip { actions.append(.skip) }
         if options.isStranded { actions.append(.concede) }
 

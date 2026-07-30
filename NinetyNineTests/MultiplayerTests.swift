@@ -154,7 +154,7 @@ final class RedactionTests: XCTestCase {
                     } else {
                         try engine.play(cardID: cardID, by: current.id, declaration: declaration)
                     }
-                case .useWell: try engine.drawFromWell(by: current.id)
+                case .useWell: try engine.drawFromWell(by: current.id, slot: 0)
                 case .skip: try engine.skip(by: current.id)
                 case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
                 case .concede: try engine.concedeStranded(by: current.id)
@@ -192,7 +192,7 @@ final class PlayerActionTests: XCTestCase {
         let actions: [PlayerAction] = [
             .play(cardID: 17, declaration: .ace(.eleven)),
             .play(cardID: 3, declaration: .queen(as: .eight, lockSuit: .hearts)),
-            .drawFromWell,
+            .drawFromWell(slot: 0),
             .resolveWell(declaration: .lock(.spades)),
             .skip,
             .snackoo(kind: .threeOfAKind(.five)),
@@ -259,7 +259,7 @@ final class PlayerActionTests: XCTestCase {
         XCTAssertFalse(PlayerAction.snackoo(kind: .threeQueens).requiresTurn)
         XCTAssertFalse(PlayerAction.forfeit.requiresTurn)
         XCTAssertTrue(PlayerAction.skip.requiresTurn)
-        XCTAssertTrue(PlayerAction.drawFromWell.requiresTurn)
+        XCTAssertTrue(PlayerAction.drawFromWell(slot: 0).requiresTurn)
     }
 
     func testAClientCannotPlayACardItDoesNotHold() throws {
@@ -363,7 +363,7 @@ final class ReplayTests: XCTestCase {
                 action = engine.state.pendingWell?.card.id == cardID
                     ? .resolveWell(declaration: declaration)
                     : .play(cardID: cardID, declaration: declaration)
-            case .useWell: action = .drawFromWell
+            case .useWell: action = .drawFromWell(slot: 0)
             case .skip: action = .skip
             case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
             case .concede: action = .concede

@@ -117,6 +117,21 @@ enum Rules {
     static let ceiling = 99
     static let hundredException = 100
 
+    /// How many cards a player refills to, regardless of how many they were
+    /// dealt.
+    ///
+    /// The deal size is a *starting* position, not a standing allowance: deal
+    /// seven and you play down to five, then hold at five. The rulebook confirms
+    /// it — poisoned queens drop the cap "5 → 4 → 3", a sequence that only makes
+    /// sense if the base is five.
+    ///
+    /// Bonus cards (a survived well) may push a hand above this; refill never
+    /// removes cards, it only tops up.
+    static let sustainingHandCap = 5
+
+    /// A poisoned queen permanently costs one card of capacity, to this floor.
+    static let poisonedHandCapFloor = 3
+
     // MARK: Hand-size limits
 
     /// Each player needs `handSize` cards plus a 2-card well, and the dealer may
