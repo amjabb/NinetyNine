@@ -123,13 +123,35 @@ This is what `testReplayingAnActionLogReproducesStateExactly` will pin down.
 
 | # | Step | Testable now? |
 |---|---|---|
-| 1 | `PlayerAction` — codable move covering every legal action | ✅ |
-| 2 | `PlayerView` — redacted state, hidden cards become counts | ✅ |
-| 3 | Deterministic replay of an action log | ✅ |
-| 4 | **Local pass-and-play**, 2–6 humans, hand-off screen | ✅ |
-| 5 | `MatchTransport` protocol + in-process loopback | ✅ |
-| 6 | `GameKitTransport` (`GKTurnBasedMatch`) + matchmaking UI | ❌ needs the account |
-| 7 | Game Center entitlement, App Store Connect config | ❌ needs the account |
+| 1 | `PlayerAction` — codable move covering every legal action | ✅ **done** |
+| 2 | `PlayerView` — redacted state, hidden cards become counts | ✅ **done** |
+| 3 | Deterministic replay of an action log | ✅ **done** |
+| 4 | `MatchTransport` protocol + in-process loopback | ✅ **done** |
+| 5 | `MatchCoordinator` — drives a match from transport updates | ✅ **done** |
+| 6 | `HandoffView` — the covered screen between players | ✅ **done** |
+| 7 | Wire pass-and-play into the table UI and setup screen | ⏳ **next** |
+| 8 | `GameKitTransport` (`GKTurnBasedMatch`) + matchmaking UI | ❌ needs the account |
+| 9 | Game Center entitlement, App Store Connect config | ❌ needs the account |
+
+### Step 7 — the one real decision left before online play
+
+`GameTableView` currently binds to `GameViewModel`, which owns a `GameState`
+directly. Pass-and-play and online both need it to bind to a **`PlayerView`**
+instead, since neither is allowed to hold the full state.
+
+Two ways to get there:
+
+**A. Refactor `GameTableView` onto `PlayerView` (recommended).** One table
+screen serves all three modes, and solo automatically gains the same anti-cheat
+boundary. Cost: touching a screen that is currently tested and shipping, so it
+needs the UI tests re-run against all three modes.
+
+**B. A second table screen for multiplayer.** Lower risk to 1.0, but two screens
+to keep in sync forever, and they *will* drift — that is exactly the duplication
+this codebase has avoided everywhere else.
+
+A is the right call. It's deferred to its own commit so the diff is reviewable
+and 1.0's screen isn't churned inside a feature commit.
 
 Steps 1–5 are a shippable 1.1 on their own: **pass-and-play is a real feature**,
 not scaffolding. If the account is delayed, 1.1 ships without network play and
