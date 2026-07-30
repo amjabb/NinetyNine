@@ -41,11 +41,17 @@ form silently refuses. The two that matter:
 |---|---|---|
 | 6.9" Display | 1320 × 2868 | `iPhone 17 Pro Max` |
 | 6.5" Display | 1284 × 2778 | `iPhone 14 Plus` |
+| 13" iPad | 2064 × 2752 | `iPad Pro 13-inch (M5)` |
 
 ```bash
 Scripts/screenshots.sh "iPhone 17 Pro Max"
 Scripts/screenshots.sh "iPhone 14 Plus"
+Scripts/screenshots.sh "iPad Pro 13-inch (M5)"
 ```
+
+The iPad set is **required while the app ships as universal**
+(`TARGETED_DEVICE_FAMILY = "1,2"`). Switching to iPhone-only removes the
+requirement — and the iPad tab — entirely.
 
 Each writes to its own folder under `Artifacts/screenshots/<device-slug>/`, so
 capturing a second size never destroys the first.
@@ -147,6 +153,20 @@ card,cards,99,tally,shedding,party,multiplayer,passandplay,offline,family,deck,s
 ### Category
 - **Primary:** Games → Card
 - **Secondary:** Games → Board
+
+### Copyright
+```
+2026 Amir Jabbari
+```
+Year then rights holder; App Store Connect adds the © itself.
+
+### Content Rights Information (in App Information)
+**"Does your app contain, show, or access third-party content?" → No.**
+
+Accurate: every card, suit, pip, ornament and sound is generated in code at
+runtime. No licensed art, no fonts beyond Apple's system faces, no audio
+samples, no third-party SDKs. The rules of the card game are the only outside
+material, and game rules are not copyrightable.
 
 ### Age rating
 **4+.** Answer "None" to every question in the questionnaire. There is no
