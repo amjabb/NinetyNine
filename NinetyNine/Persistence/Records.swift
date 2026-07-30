@@ -245,4 +245,31 @@ final class Records: ObservableObject {
         pendingToasts = []
         save()
     }
+
+    /// Seeds a plausible history for App Store capture runs. Guarded by a launch
+    /// argument at the call site, so it can never run in a shipped build.
+    func seedShowcase() {
+        stats = Stats(
+            gamesPlayed: 47,
+            gamesWon: 26,
+            currentStreak: 3,
+            bestStreak: 6,
+            ninesPlayed: 31,
+            hundredsReached: 2,
+            wellsSurvived: 9,
+            wellsFatal: 12,
+            snackoosDeclared: 14,
+            suitsLocked: 38,
+            queensPoisoned: 7,
+            opponentsEliminated: 61,
+            tightestSurvival: 1,
+            deepestNegative: -34
+        )
+        unlocked = [
+            .firstWin, .slammer, .wellWalker, .snackooArtist,
+            .lockSmith, .belowZero, .hatTrick, .survivor,
+        ]
+        pendingToasts = []
+        save()
+    }
 }

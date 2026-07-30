@@ -305,7 +305,9 @@ struct GameTableView: View {
             AnnouncementBanner(announcement: announcement)
                 .padding(.horizontal, 20)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.top, 92)
+                // Clear of the opponent row, which ends around 210pt — the banner
+                // used to sit on top of their names.
+                .padding(.top, 218)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .allowsHitTesting(false)
         }
@@ -324,7 +326,7 @@ struct GameTableView: View {
             AchievementToast(achievement: achievement)
                 .padding(.horizontal, 24)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.top, 92)
+                .padding(.top, 218)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .allowsHitTesting(false)
         }

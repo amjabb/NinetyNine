@@ -202,12 +202,10 @@ final class FlowUITests: XCTestCase {
             while moves < 200 {
                 moves += 1
 
+                Thread.sleep(forTimeInterval: 0.2)
                 if app.buttons["Rematch"].exists { break }
                 if resolveDeclarationSheetIfPresent() { continue }
-                guard isPlayersTurn else {
-                    Thread.sleep(forTimeInterval: 0.25)
-                    continue
-                }
+                guard isPlayersTurn else { continue }
 
                 if let dead = handCards.first(where: { ($0.value as? String) == "Not playable" }) {
                     let name = dead.label
@@ -226,9 +224,12 @@ final class FlowUITests: XCTestCase {
                     return
                 }
 
-                if tapFirstExisting(byLabelPrefix: ["Snackoo", "The Well", "Skip", "No outs"]) == true { continue }
-                if tapAPlayableCard() { continue }
-                Thread.sleep(forTimeInterval: 0.25)
+                if app.staticTexts["No legal card"].exists {
+                    if tapFirstExisting(byLabelPrefix: ["The Well", "Skip", "No outs"]) == true { continue }
+                } else if app.staticTexts["Your move"].exists {
+                    if tapFirstExisting(byLabelPrefix: ["Snackoo"]) == true { continue }
+                    if tapAPlayableCard() { continue }
+                }
             }
 
             if app.buttons["Rematch"].exists, game < 2 {
@@ -258,20 +259,23 @@ final class FlowUITests: XCTestCase {
         while moves < moveBudget {
             moves += 1
 
-            if app.buttons["Rematch"].exists { return }
+            // Banners and the delta chip auto-dismiss on timers, so the hierarchy
+            // is briefly in motion even on the player's turn. A short settle
+            // before querying avoids resolving a snapshot mid-transition.
+            Thread.sleep(forTimeInterval: 0.2)
 
-            // The declaration sheet is modal and only ever up on the player's turn.
+            if app.buttons["Rematch"].exists { return }
             if resolveDeclarationSheetIfPresent() { continue }
 
-            guard isPlayersTurn else {
-                Thread.sleep(forTimeInterval: 0.25)
-                continue
+            // Query each control only in the state where it actually exists —
+            // polling for "The Well" on every iteration races against the
+            // opponents' turns.
+            if app.staticTexts["No legal card"].exists {
+                if tapFirstExisting(byLabelPrefix: ["The Well", "Skip", "No outs"]) == true { continue }
+            } else if app.staticTexts["Your move"].exists {
+                if tapFirstExisting(byLabelPrefix: ["Snackoo"]) == true { continue }
+                if tapAPlayableCard() { continue }
             }
-
-            if tapFirstExisting(byLabelPrefix: ["Snackoo", "The Well", "Skip", "No outs"]) == true { continue }
-            if tapAPlayableCard() { continue }
-
-            Thread.sleep(forTimeInterval: 0.25)
         }
     }
 
