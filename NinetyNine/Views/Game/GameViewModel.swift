@@ -161,7 +161,39 @@ final class GameViewModel: ObservableObject {
         )
     }
 
+    /// Online: humans on other devices, over Game Center.
+    ///
+    /// The transport is the only difference from the other two modes — the
+    /// rules, the table, and the redaction boundary are identical, because they
+    /// were written against `MatchTransport` rather than against any one of them.
+    static func online(transport: GameKitTransport) -> GameViewModel {
+        GameViewModel(
+            transport: transport,
+            mode: .online,
+            difficulty: .sharp,
+            recordedPlayerID: transport.localPlayerID
+        )
+    }
+
+    /// Shared designated init: everything above builds a transport and calls this.
     private init(
+        transport: MatchTransport,
+        mode: MatchCoordinator.MatchMode,
+        difficulty: Difficulty,
+        recordedPlayerID: String?,
+        records: Records = .shared,
+        settings: Settings = .shared
+    ) {
+        self.mode = mode
+        self.difficulty = difficulty
+        self.records = records
+        self.settings = settings
+        self.recordedPlayerID = recordedPlayerID
+        self.coordinator = MatchCoordinator(transport: transport, mode: mode)
+        self.coordinator.autoDriveAI = false
+    }
+
+    private convenience init(
         participants: [MatchParticipant],
         mode: MatchCoordinator.MatchMode,
         difficulty: Difficulty,
@@ -172,12 +204,6 @@ final class GameViewModel: ObservableObject {
         records: Records = .shared,
         settings: Settings = .shared
     ) {
-        self.mode = mode
-        self.difficulty = difficulty
-        self.records = records
-        self.settings = settings
-        self.recordedPlayerID = recordedPlayerID
-
         // The dealer sits last so play opens on the seat after them, per the
         // rulebook. Rotating the seating rather than passing an index keeps the
         // transport's participant order and the engine's seating identical.
@@ -195,10 +221,16 @@ final class GameViewModel: ObservableObject {
             seed: seed ?? UInt32.random(in: 0...UInt32.max),
             handSize: handSize
         )
-        self.coordinator = MatchCoordinator(transport: transport, mode: mode)
-        // Pacing lives here, not in the coordinator — otherwise two systems
-        // fight over when an opponent's move is allowed to appear.
-        self.coordinator.autoDriveAI = false
+        // Pacing lives in the view model, not the coordinator — otherwise two
+        // systems fight over when an opponent's move is allowed to appear.
+        self.init(
+            transport: transport,
+            mode: mode,
+            difficulty: difficulty,
+            recordedPlayerID: recordedPlayerID,
+            records: records,
+            settings: settings
+        )
     }
 
     /// Validate a configuration without starting it, so an impossible table is

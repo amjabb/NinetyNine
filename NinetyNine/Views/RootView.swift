@@ -58,7 +58,12 @@ struct RootView: View {
                 .transition(transition(for: route))
         }
         .environment(\.motion, MotionBudget(reduceMotion: reduceMotion))
-        .onAppear { SoundEngine.shared.warmUp() }
+        .onAppear {
+            SoundEngine.shared.warmUp()
+            // Authenticate early and quietly. If it fails, nothing breaks —
+            // online is simply reported as unavailable when the player looks.
+            GameCenterSession.shared.authenticateIfNeeded()
+        }
         .alert("Couldn't deal", isPresented: .constant(setupFailure != nil)) {
             Button("OK") { setupFailure = nil }
         } message: {
@@ -206,11 +211,45 @@ struct RootView: View {
                 handSize: handSize,
                 dealerID: dealerID
             )
+        case .online:
+            startOnlineGame(handSize: handSize)
+            return
         }
         // Remember the dealer's choice so the next setup screen opens on it.
         settings.handSize = handSize
         gameSeed += 1
         go(.game)
+    }
+
+    /// Online play goes through Game Center's own matchmaking UI, so this is
+    /// async and can fail in ways the other modes can't — declined sign-in, a
+    /// cancelled matchmaker, no network. Each surfaces as an explanation rather
+    /// than a dead button.
+    private func startOnlineGame(handSize: Int) {
+        Task {
+            guard GameCenterSession.shared.canPlayOnline else {
+                setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
+                return
+            }
+            let transport = GameKitTransport()
+            do {
+                let match = try await transport.findMatch(
+                    minPlayers: 2,
+                    maxPlayers: min(6, Settings.shared.opponentCount + 1),
+                    handSize: handSize
+                )
+                let online = GameKitTransport(match: match)
+                activeGame = .online(transport: online)
+                gameSeed += 1
+                go(.game)
+            } catch let error as MatchError {
+                // Cancelling the matchmaker is a choice, not a failure.
+                if case .matchmakingFailed("cancelled") = error { return }
+                setupFailure = error.errorDescription ?? "Couldn't start an online match."
+            } catch {
+                setupFailure = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Transitions

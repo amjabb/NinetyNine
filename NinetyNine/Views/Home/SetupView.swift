@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SetupView: View {
     @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var session = GameCenterSession.shared
     @Binding var mode: GameMode
     let onStart: () -> Void
     let onBack: () -> Void
@@ -22,12 +23,25 @@ struct SetupView: View {
     enum GameMode: String, CaseIterable, Hashable {
         case solo
         case passAndPlay
+        case online
 
-        var title: String { self == .solo ? "Solo" : "Pass & play" }
+        var title: String {
+            switch self {
+            case .solo: return "Solo"
+            case .passAndPlay: return "Pass & play"
+            case .online: return "Online"
+            }
+        }
+
         var blurb: String {
-            self == .solo
-                ? "You against the machine."
-                : "Two to six of you, sharing this device. The screen covers between turns."
+            switch self {
+            case .solo:
+                return "You against the machine."
+            case .passAndPlay:
+                return "Two to six of you, sharing this device. The screen covers between turns."
+            case .online:
+                return "Turn-based over Game Center. Take your turn now or come back tomorrow — the match waits."
+            }
         }
     }
 
@@ -67,7 +81,9 @@ struct SetupView: View {
                         .padding(.top, -14)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if mode == .solo {
+                    if mode == .online {
+                        onlineSection
+                    } else if mode == .solo {
                         BrassSegments(
                             title: "Opponents",
                             options: (1...5).map { ($0, "\($0)") },
@@ -96,9 +112,10 @@ struct SetupView: View {
                         seatNames
                     }
 
-                    handSizeSection
-
-                    dealSummary
+                    if mode != .online {
+                        handSizeSection
+                        dealSummary
+                    }
                 }
                 .padding(24)
                 .tableContentWidth()
@@ -143,6 +160,71 @@ struct SetupView: View {
                 .font(Typography.title)
                 .foregroundStyle(Palette.ivory)
         }
+    }
+
+    /// Online play depends on Game Center being signed in. Rather than gate the
+    /// mode behind a wall, the section states plainly where things stand — the
+    /// rest of the game works perfectly without an account.
+    @ViewBuilder
+    private var onlineSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch session.status {
+            case .signedIn(let name):
+                statusCard(
+                    icon: "checkmark.seal.fill",
+                    tint: Palette.safe,
+                    title: "Signed in as \(name)",
+                    detail: "Tap Deal to find a match. Two to six players."
+                )
+            case .signingIn, .unknown:
+                statusCard(
+                    icon: "ellipsis.circle",
+                    tint: Palette.brassMid,
+                    title: "Connecting to Game Center…",
+                    detail: "This only takes a moment."
+                )
+            case .unavailable(let reason):
+                statusCard(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: Palette.caution,
+                    title: "Game Center isn't available",
+                    detail: reason
+                )
+            }
+
+            Text("The player who starts the match sets the deal size. Everything else plays exactly as it does offline.")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.ivoryFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear { session.authenticateIfNeeded() }
+    }
+
+    private func statusCard(icon: String, tint: Color, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Typography.bodyEmphasised)
+                    .foregroundStyle(Palette.ivory)
+                Text(detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.ivoryDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(tint.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
+        )
     }
 
     private func clampHandSize() {
