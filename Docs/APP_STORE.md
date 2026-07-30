@@ -142,18 +142,17 @@ kind), no violence, and no user-generated content.
 
 ### Support URL  ✅
 ```
-https://github.com/<your-username>/NinetyNine
+https://github.com/amjabb/NinetyNine
 ```
 The repository README has a **Support** section pointing at GitHub Issues, which
-is a reachable, working support channel. Substitute your username once the repo
-is pushed.
+is a reachable, working support channel.
 
 ### Marketing URL (optional)
 Same URL, or leave blank — it's not required.
 
 ### Privacy policy URL  ✅
 ```
-https://github.com/<your-username>/NinetyNine/blob/main/PRIVACY.md
+https://github.com/amjabb/NinetyNine/blob/main/PRIVACY.md
 ```
 **Required for every app**, including ones that collect nothing. `PRIVACY.md` in
 the repo root covers it and is accurate to what the app actually does.
