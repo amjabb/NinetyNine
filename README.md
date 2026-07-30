@@ -34,8 +34,10 @@ xcodebuild test -project NinetyNine.xcodeproj -scheme NinetyNine \
 ## Tests
 
 ```
-81 unit tests    engine rules, AI self-play, presentation maths
- 8 UI flows      real taps through every screen, plus a full game to completion
+120 unit tests   engine rules, AI self-play, presentation maths,
+                 redaction boundary, action replay determinism
+ 13 UI flows     real taps through every screen, a full solo game to
+                 completion, and a full pass-and-play game through the hand-off
 ```
 
 The UI tests are not decoration — they found four real bugs that screenshots

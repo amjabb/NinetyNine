@@ -8,13 +8,42 @@ import SwiftUI
 
 struct SetupView: View {
     @ObservedObject private var settings = Settings.shared
+    @Binding var mode: GameMode
     let onStart: () -> Void
     let onBack: () -> Void
+
+    @FocusState private var focusedSeat: Int?
+    /// Names are edited in local state and written back on change. Binding a
+    /// TextField straight through @AppStorage round-trips UserDefaults on every
+    /// keystroke, and SwiftUI re-appends against the stale value — which showed
+    /// up as "AdaAdaAdaAdaAda".
+    @State private var seatNameDrafts: [String] = []
+
+    enum GameMode: String, CaseIterable, Hashable {
+        case solo
+        case passAndPlay
+
+        var title: String { self == .solo ? "Solo" : "Pass & play" }
+        var blurb: String {
+            self == .solo
+                ? "You against the machine."
+                : "Two to six of you, sharing this device. The screen covers between turns."
+        }
+    }
+
+    /// Seats at the table, counting you.
+    private var playerCount: Int {
+        mode == .solo ? settings.opponentCount + 1 : settings.localPlayerCount
+    }
 
     /// The hand-size ceiling depends on the player count, so it has to be
     /// recomputed live and the current choice clamped into it.
     private var maxHandSize: Int {
-        Rules.maxHandSize(forPlayerCount: settings.opponentCount + 1)
+        Rules.maxHandSize(forPlayerCount: playerCount)
+    }
+
+    private var currentHandSize: Int {
+        min(max(settings.handSize, Rules.minHandSize), maxHandSize)
     }
 
     var body: some View {
@@ -26,25 +55,46 @@ struct SetupView: View {
                     header
 
                     BrassSegments(
-                        title: "Opponents",
-                        options: (1...5).map { ($0, "\($0)") },
-                        selection: $settings.opponentCount
+                        title: "Mode",
+                        options: GameMode.allCases.map { ($0, $0.title) },
+                        selection: $mode
                     )
-                    .onChange(of: settings.opponentCount) { _, _ in
-                        // Clamp rather than silently allowing an illegal deal.
-                        if settings.handSize > maxHandSize { settings.handSize = maxHandSize }
-                    }
+                    .onChange(of: mode) { _, _ in clampHandSize() }
 
-                    BrassSegments(
-                        title: "Difficulty",
-                        options: Difficulty.allCases.map { ($0, $0.displayName) },
-                        selection: $settings.difficulty
-                    )
-
-                    Text(settings.difficulty.blurb)
+                    Text(mode.blurb)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.ivoryDim)
                         .padding(.top, -14)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if mode == .solo {
+                        BrassSegments(
+                            title: "Opponents",
+                            options: (1...5).map { ($0, "\($0)") },
+                            selection: $settings.opponentCount
+                        )
+                        .onChange(of: settings.opponentCount) { _, _ in clampHandSize() }
+
+                        BrassSegments(
+                            title: "Difficulty",
+                            options: Difficulty.allCases.map { ($0, $0.displayName) },
+                            selection: $settings.difficulty
+                        )
+
+                        Text(settings.difficulty.blurb)
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.ivoryDim)
+                            .padding(.top, -14)
+                    } else {
+                        BrassSegments(
+                            title: "Players",
+                            options: (2...6).map { ($0, "\($0)") },
+                            selection: $settings.localPlayerCount
+                        )
+                        .onChange(of: settings.localPlayerCount) { _, _ in clampHandSize() }
+
+                        seatNames
+                    }
 
                     handSizeSection
 
@@ -71,6 +121,19 @@ struct SetupView: View {
                 )
             }
         }
+        .onAppear { loadSeatNameDrafts() }
+        .onChange(of: settings.localPlayerCount) { _, _ in loadSeatNameDrafts() }
+        .onChange(of: seatNameDrafts) { _, drafts in
+            settings.localPlayerNames = drafts
+        }
+    }
+
+    /// Pull persisted names into the editable drafts, padded to the seat count.
+    private func loadSeatNameDrafts() {
+        var stored = settings.localPlayerNames
+        while stored.count < settings.localPlayerCount { stored.append("") }
+        let trimmed = Array(stored.prefix(settings.localPlayerCount))
+        if trimmed != seatNameDrafts { seatNameDrafts = trimmed }
     }
 
     private var header: some View {
@@ -82,27 +145,84 @@ struct SetupView: View {
         }
     }
 
+    private func clampHandSize() {
+        // Clamp rather than silently allowing an illegal deal.
+        if settings.handSize > maxHandSize { settings.handSize = maxHandSize }
+    }
+
+    /// Name entry for each seat. Names matter far more here than in solo — the
+    /// hand-off screen has to be able to tell one player from another, and
+    /// "Player 3" is a poor way to hand someone a phone.
+    private var seatNames: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Names").labelStyle()
+            VStack(spacing: 8) {
+                ForEach(0..<settings.localPlayerCount, id: \.self) { index in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(Typography.counter(12, weight: .heavy))
+                            .foregroundStyle(Palette.brassMid)
+                            .frame(width: 16)
+                        TextField(
+                            "Player \(index + 1)",
+                            text: Binding(
+                                get: { index < seatNameDrafts.count ? seatNameDrafts[index] : "" },
+                                set: { newValue in
+                                    while seatNameDrafts.count <= index { seatNameDrafts.append("") }
+                                    seatNameDrafts[index] = String(newValue.prefix(16))
+                                }
+                            )
+                        )
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit { focusedSeat = nil }
+                        .focused($focusedSeat, equals: index)
+                        .foregroundStyle(Palette.ivory)
+                        .font(Typography.bodyEmphasised)
+                        .accessibilityLabel("Name for seat \(index + 1)")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(.white.opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(
+                                focusedSeat == index
+                                    ? Palette.brassMid.opacity(0.8)
+                                    : Palette.brassDeep.opacity(0.4),
+                                lineWidth: 1
+                            )
+                    )
+                }
+            }
+        }
+    }
+
     private var handSizeSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("Hand size").labelStyle()
                 Spacer()
-                Text("\(settings.validHandSize())")
+                Text("\(currentHandSize)")
                     .font(Typography.counter(15, weight: .heavy))
                     .foregroundStyle(Palette.brassLight)
             }
             // A stepper rather than a slider: the legal range is only 5-12 and
             // every value matters, so precision beats sweep.
             HStack(spacing: 8) {
-                stepButton(icon: "minus", enabled: settings.validHandSize() > Rules.minHandSize) {
-                    settings.handSize = max(Rules.minHandSize, settings.validHandSize() - 1)
+                stepButton(icon: "minus", enabled: currentHandSize > Rules.minHandSize) {
+                    settings.handSize = max(Rules.minHandSize, currentHandSize - 1)
                 }
                 handSizeTrack
-                stepButton(icon: "plus", enabled: settings.validHandSize() < maxHandSize) {
-                    settings.handSize = min(maxHandSize, settings.validHandSize() + 1)
+                stepButton(icon: "plus", enabled: currentHandSize < maxHandSize) {
+                    settings.handSize = min(maxHandSize, currentHandSize + 1)
                 }
             }
-            Text("Up to \(maxHandSize) with \(settings.opponentCount + 1) players — everyone also needs a two-card well.")
+            Text("Up to \(maxHandSize) with \(playerCount) players — everyone also needs a two-card well.")
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.ivoryFaint)
         }
@@ -115,7 +235,7 @@ struct SetupView: View {
             HStack(spacing: 3) {
                 ForEach(Array(span), id: \.self) { value in
                     let isAvailable = value <= maxHandSize
-                    let isFilled = value <= settings.validHandSize()
+                    let isFilled = value <= currentHandSize
                     RoundedRectangle(cornerRadius: 3)
                         .fill(isFilled
                             ? AnyShapeStyle(Palette.brassFace)
@@ -159,8 +279,8 @@ struct SetupView: View {
     /// Shows the arithmetic of the deal, because "why can't I pick 12?" is the
     /// obvious question and the answer is just a sum.
     private var dealSummary: some View {
-        let players = settings.opponentCount + 1
-        let hand = settings.validHandSize()
+        let players = playerCount
+        let hand = currentHandSize
         let dealt = players * (hand + 2)
         return VStack(alignment: .leading, spacing: 6) {
             Text("The deal").labelStyle()

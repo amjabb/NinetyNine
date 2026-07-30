@@ -11,8 +11,16 @@ import SwiftUI
 
 struct GameOverView: View {
     let outcome: GameViewModel.Outcome
-    let state: GameState
-    let humanID: String
+    /// Final standings, already ordered. Built from elimination order rather
+    /// than from a GameState, so this screen never holds hidden cards either.
+    let standings: [(participant: MatchParticipant, position: Int)]
+    /// Whose result the headline is about. In pass-and-play this is whoever is
+    /// holding the device.
+    let subjectID: String?
+    let winnerName: String?
+    /// Pass-and-play shares one screen, so the copy addresses the table rather
+    /// than a single player.
+    let isSharedDevice: Bool
     let onRematch: () -> Void
     let onExit: () -> Void
 
@@ -36,7 +44,7 @@ struct GameOverView: View {
 
                 headline
 
-                standings
+                standingsList
 
                 Spacer(minLength: 0)
 
@@ -65,9 +73,11 @@ struct GameOverView: View {
                     .font(.system(size: 12, weight: .heavy))
                     .tracking(4)
                     .foregroundStyle(Palette.brassMid)
-                Text("You win")
+                Text(isSharedDevice ? (winnerName ?? "Winner") : "You win")
                     .font(.system(size: 46, weight: .black, design: .serif))
                     .brassFoil()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
             } else {
                 Text("ELIMINATED")
                     .font(.system(size: 12, weight: .heavy))
@@ -88,16 +98,16 @@ struct GameOverView: View {
 
     private var placementText: String {
         guard case .lost(let placed) = outcome else { return "" }
-        return Standings.placementHeadline(position: placed, of: state.players.count)
+        return Standings.placementHeadline(position: placed, of: standings.count)
     }
 
     private var subtitle: String {
         if didWin {
-            let opponents = state.players.count - 1
+            let opponents = max(0, standings.count - 1)
             return "You outlasted \(opponents) \(opponents == 1 ? "opponent" : "opponents")."
         }
-        if let winner = state.player(id: state.winnerID ?? "") {
-            return "\(winner.name) took the table. The first player out deals next."
+        if let winnerName {
+            return "\(winnerName) took the table. The first player out deals next."
         }
         return "The table is done."
     }
@@ -107,27 +117,23 @@ struct GameOverView: View {
 
     /// Finishing order, reconstructed from elimination ranks. The winner sits at
     /// the top; everyone else appears in reverse knockout order.
-    private var standings: some View {
-        let ordered = state.players.sorted { lhs, rhs in
-            switch (lhs.eliminationRank, rhs.eliminationRank) {
-            case (nil, nil): return lhs.name < rhs.name
-            case (nil, _): return true
-            case (_, nil): return false
-            case (let l?, let r?): return l > r
-            }
-        }
-        return VStack(spacing: 6) {
-            ForEach(Array(ordered.enumerated()), id: \.element.id) { index, player in
+    private var standingsList: some View {
+        VStack(spacing: 6) {
+            ForEach(standings, id: \.participant.id) { entry in
+                let isSubject = entry.participant.id == subjectID
                 HStack(spacing: 10) {
-                    Text("\(index + 1)")
+                    Text("\(entry.position)")
                         .font(Typography.counter(13, weight: .heavy))
-                        .foregroundStyle(index == 0 ? Palette.brassLight : Palette.ivoryFaint)
+                        .foregroundStyle(entry.position == 1 ? Palette.brassLight : Palette.ivoryFaint)
                         .frame(width: 20)
-                    Text(player.id == humanID ? "You" : player.name)
-                        .font(.system(size: 15, weight: player.id == humanID ? .bold : .medium))
-                        .foregroundStyle(player.id == humanID ? Palette.ivory : Palette.ivory.opacity(0.75))
+                    // On a shared device everyone is a real person by name;
+                    // calling one of them "You" would be meaningless to the
+                    // others reading the same screen.
+                    Text(isSubject && !isSharedDevice ? "You" : entry.participant.name)
+                        .font(.system(size: 15, weight: isSubject ? .bold : .medium))
+                        .foregroundStyle(isSubject ? Palette.ivory : Palette.ivory.opacity(0.75))
                     Spacer()
-                    if index == 0 {
+                    if entry.position == 1 {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.brassFace)
@@ -137,7 +143,7 @@ struct GameOverView: View {
                 .padding(.vertical, 9)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(player.id == humanID ? Color.white.opacity(0.09) : Color.white.opacity(0.03))
+                        .fill(isSubject ? Color.white.opacity(0.09) : Color.white.opacity(0.03))
                 )
             }
         }

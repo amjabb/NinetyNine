@@ -129,33 +129,41 @@ This is what `testReplayingAnActionLogReproducesStateExactly` will pin down.
 | 4 | `MatchTransport` protocol + in-process loopback | ✅ **done** |
 | 5 | `MatchCoordinator` — drives a match from transport updates | ✅ **done** |
 | 6 | `HandoffView` — the covered screen between players | ✅ **done** |
-| 7 | Wire pass-and-play into the table UI and setup screen | ⏳ **next** |
+| 7 | Wire pass-and-play into the table UI and setup screen | ✅ **done** |
 | 8 | `GameKitTransport` (`GKTurnBasedMatch`) + matchmaking UI | ❌ needs the account |
 | 9 | Game Center entitlement, App Store Connect config | ❌ needs the account |
 
-### Step 7 — the one real decision left before online play
+**Steps 1–7 are a shippable 1.1 on their own.** Pass-and-play is a real feature,
+not scaffolding. If the developer account is delayed, 1.1 ships without network
+play and GameKit becomes 1.2 with no wasted work.
 
-`GameTableView` currently binds to `GameViewModel`, which owns a `GameState`
-directly. Pass-and-play and online both need it to bind to a **`PlayerView`**
-instead, since neither is allowed to hold the full state.
+### What step 7 actually changed
 
-Two ways to get there:
+`GameTableView` used to bind to a `GameState`. It now binds to a **`PlayerView`**,
+and `GameViewModel` sits on a `MatchCoordinator`. One table screen serves solo,
+pass-and-play, and — when it lands — online.
 
-**A. Refactor `GameTableView` onto `PlayerView` (recommended).** One table
-screen serves all three modes, and solo automatically gains the same anti-cheat
-boundary. Cost: touching a screen that is currently tested and shipping, so it
-needs the UI tests re-run against all three modes.
+The side effect worth calling out: **solo now goes through the same redaction
+boundary.** There is no longer any code path anywhere in the app where the screen
+holds another player's cards. That wasn't the goal of the refactor, it just falls
+out of having one path instead of two.
 
-**B. A second table screen for multiplayer.** Lower risk to 1.0, but two screens
-to keep in sync forever, and they *will* drift — that is exactly the duplication
-this codebase has avoided everywhere else.
+### What's left for GameKit
 
-A is the right call. It's deferred to its own commit so the diff is reviewable
-and 1.0's screen isn't churned inside a feature commit.
+Only the adapter. `GameKitTransport` implements four methods —
+`start`, `send`, `leave`, and delivering `MatchUpdate`s — against a protocol that
+already has tests. Specifically:
 
-Steps 1–5 are a shippable 1.1 on their own: **pass-and-play is a real feature**,
-not scaffolding. If the account is delayed, 1.1 ships without network play and
-GameKit becomes 1.2 with no wasted work.
+1. `GKLocalPlayer.local.authenticateHandler` for sign-in.
+2. `GKTurnBasedMatchmakerViewController` for matchmaking.
+3. Encode `[SubmittedAction]` + seed as the match data (a full game's log is
+   already asserted to fit inside the 64KB cap).
+4. `endTurn(withNextParticipants:)` after each move; `participantQuitInTurn` maps
+   onto the existing `.forfeit` action.
+5. Hop to the main actor before calling `onUpdate` — the protocol is `@MainActor`
+   and its callers depend on synchronous delivery.
+
+Everything above the transport is done and tested.
 
 ---
 

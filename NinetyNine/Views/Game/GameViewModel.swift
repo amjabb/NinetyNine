@@ -1,12 +1,20 @@
 //
 //  GameViewModel.swift
-//  Turns the engine's event timeline into something the table can animate.
+//  Turns a match's event timeline into something the table can animate.
 //
-//  The engine is synchronous and instant: `play` returns the whole consequence
-//  as an array of events. The table needs those consequences spread over time —
-//  the card flies, *then* the tally ticks, *then* the lock snaps shut, *then*
-//  the next player starts thinking. This class owns that choreography, and it is
-//  the only place in the app that knows about timing.
+//  The engine is synchronous and instant: applying an action returns the whole
+//  consequence as an array of events. The table needs those consequences spread
+//  over time — the card flies, *then* the tally ticks, *then* the lock snaps
+//  shut, *then* the next player starts thinking. This class owns that
+//  choreography, and it is the only place in the app that knows about timing.
+//
+//  It sits on a `MatchCoordinator`, which means one view model and one table
+//  screen serve solo, pass-and-play, and (later) online. The differences between
+//  those collapse to two questions the coordinator already answers: is the seat
+//  to play driven by AI in this process, and is that seat at this device.
+//
+//  Consequently the table only ever sees a redacted `PlayerView` — solo included.
+//  There is no code path where the screen holds another player's cards.
 //
 
 import SwiftUI
@@ -16,7 +24,8 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Published table state
 
-    @Published private(set) var state: GameState
+    /// What the person holding the device is allowed to see.
+    @Published private(set) var view: PlayerView?
     /// Nil until the game ends.
     @Published private(set) var outcome: Outcome?
 
@@ -26,7 +35,7 @@ final class GameViewModel: ObservableObject {
     @Published var tallyDelta: Int?
     /// Set while a 9 is landing, so the gauge can use the slam curve.
     @Published var isSlamming = false
-    /// The card currently in flight to the discard pile, for the flight animation.
+    /// The card currently in flight to the discard pile.
     @Published var cardInFlight: Card?
     /// Drives the drum-roll → flip → verdict sequence.
     @Published var wellReveal: WellRevealPhase = .idle
@@ -40,17 +49,22 @@ final class GameViewModel: ObservableObject {
     @Published var achievementToast: Achievement?
     /// True while cards are being dealt at the start of a game.
     @Published var isDealing = true
+    /// Pass-and-play only: cover the screen until the next player confirms.
+    @Published private(set) var awaitingHandoff = false
 
     // MARK: - Configuration
 
-    let humanID = "human"
-    private let engine: GameEngine
+    let mode: MatchCoordinator.MatchMode
+    private let coordinator: MatchCoordinator
     private let difficulty: Difficulty
     private let records: Records
     private let settings: Settings
     private var hasRecordedEnd = false
-    /// Guards against the AI loop being started twice.
-    private var isRunningAI = false
+    private var isDrivingAI = false
+    /// Solo only: the single human whose achievements are being tracked. In
+    /// pass-and-play nobody's lifetime record is touched — it isn't one person's
+    /// game, and crediting the device owner with a shared win would be a lie.
+    private let recordedPlayerID: String?
 
     // MARK: - Types
 
@@ -72,19 +86,14 @@ final class GameViewModel: ObservableObject {
 
     enum WellRevealPhase: Equatable {
         case idle
-        /// Two face-down cards shuffling before one is chosen.
         case rolling(playerID: String)
-        /// Revealed and awaiting the verdict beat.
         case revealed(card: Card, playable: Bool, playerID: String)
     }
 
-    /// A card is halfway played and needs the player to resolve its choices.
     struct PendingChoice: Identifiable, Equatable {
         let id = UUID()
         var card: Card
-        /// Every legal way this card can be played right now.
         var options: [Declaration]
-        /// True when the card came from the well rather than the hand.
         var isFromWell: Bool
     }
 
@@ -96,41 +105,89 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Init
 
-    init(
+    /// Solo: one human on this device, the rest AI.
+    static func solo(
         difficulty: Difficulty,
         opponentCount: Int,
         handSize: Int,
         playerName: String,
-        seed: UInt32? = nil,
+        seed: UInt32? = nil
+    ) -> GameViewModel {
+        var participants = [MatchParticipant(id: "human", name: playerName, kind: .localHuman)]
+        let names = opponentNames(for: difficulty)
+        for index in 0..<opponentCount {
+            participants.append(
+                MatchParticipant(id: "ai\(index)", name: names[index % names.count], kind: .ai(difficulty))
+            )
+        }
+        return GameViewModel(
+            participants: participants,
+            mode: .solo,
+            difficulty: difficulty,
+            handSize: handSize,
+            seed: seed,
+            recordedPlayerID: "human"
+        )
+    }
+
+    /// Pass-and-play: several humans sharing this device.
+    static func passAndPlay(
+        playerNames: [String],
+        handSize: Int,
+        seed: UInt32? = nil
+    ) -> GameViewModel {
+        let participants = playerNames.enumerated().map { index, name in
+            MatchParticipant(
+                id: "p\(index)",
+                name: name.trimmingCharacters(in: .whitespaces).isEmpty ? "Player \(index + 1)" : name,
+                kind: .localHuman
+            )
+        }
+        return GameViewModel(
+            participants: participants,
+            mode: .passAndPlay,
+            difficulty: .sharp,
+            handSize: handSize,
+            seed: seed,
+            recordedPlayerID: nil
+        )
+    }
+
+    private init(
+        participants: [MatchParticipant],
+        mode: MatchCoordinator.MatchMode,
+        difficulty: Difficulty,
+        handSize: Int,
+        seed: UInt32?,
+        recordedPlayerID: String?,
         records: Records = .shared,
         settings: Settings = .shared
-    ) throws {
+    ) {
+        self.mode = mode
         self.difficulty = difficulty
         self.records = records
         self.settings = settings
+        self.recordedPlayerID = recordedPlayerID
 
-        var seats: [(id: String, name: String, kind: PlayerState.PlayerKind)] = [
-            (humanID, playerName, .human),
-        ]
-        let names = Self.opponentNames(for: difficulty)
-        for index in 0..<opponentCount {
-            seats.append(("ai\(index)", names[index % names.count], .ai(difficulty)))
-        }
-
-        // The human sits at seat 0; the dealer is the last seat so play opens on
-        // the human — a game should never begin by making you watch.
-        let dealerIndex = seats.count - 1
-        self.engine = try GameEngine(
-            seats: seats,
-            dealerIndex: dealerIndex,
-            handSize: handSize,
-            seed: seed
+        let transport = LoopbackTransport(
+            localPlayerID: participants[0].id,
+            participants: participants,
+            seed: seed ?? UInt32.random(in: 0...UInt32.max),
+            handSize: handSize
         )
-        self.state = engine.state
+        self.coordinator = MatchCoordinator(transport: transport, mode: mode)
+        // Pacing lives here, not in the coordinator — otherwise two systems
+        // fight over when an opponent's move is allowed to appear.
+        self.coordinator.autoDriveAI = false
     }
 
-    /// Opponent names carry the difficulty's character — it's a cheap way to set
-    /// expectations before the first card is played.
+    /// Validate a configuration without starting it, so an impossible table is
+    /// caught on the setup screen rather than on a broken game screen.
+    static func canDeal(playerCount: Int, handSize: Int) -> Bool {
+        guard (2...6).contains(playerCount) else { return false }
+        return handSize >= Rules.minHandSize && handSize <= Rules.maxHandSize(forPlayerCount: playerCount)
+    }
+
     private static func opponentNames(for difficulty: Difficulty) -> [String] {
         switch difficulty {
         case .casual: return ["Pip", "Dot", "Bram", "Sunny", "Nell"]
@@ -141,32 +198,57 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Derived view state
 
-    var human: PlayerState { state.player(id: humanID) ?? state.players[0] }
-    var opponents: [PlayerState] { state.players.filter { $0.id != humanID } }
-    var isHumanTurn: Bool { state.currentPlayer.id == humanID && !state.isOver }
-    var options: TurnOptions { engine.currentPlayerOptions }
+    var participants: [MatchParticipant] { coordinator.participants }
 
-    /// Cards in the human's hand that are legal against the *current* board. The
-    /// table shades everything else, so the player never has to compute legality.
-    ///
-    /// Deliberately not gated on whose turn it is: greying out the whole hand
-    /// while an opponent thinks tells the player nothing and actively misleads
-    /// them. Legality is information; whether they may *act* on it is separate,
-    /// and handled by `isInteractive` on the fan.
-    var playableCardIDs: Set<Int> {
-        guard wellReveal == .idle, pendingChoice == nil, !state.isOver else { return [] }
-        return Set(human.hand.filter { Rules.isPlayable($0, in: state) }.map(\.id))
+    /// The seat currently being shown. In pass-and-play this is whoever last
+    /// confirmed they're holding the device — never simply whoever's turn it is.
+    var viewingPlayerID: String? { coordinator.viewingPlayerID }
+
+    var isYourTurn: Bool {
+        guard let view else { return false }
+        return view.isYourTurn && !awaitingHandoff
     }
 
-    var snackooRanks: [Rank] { Rules.snackooRanksInHand(for: human) }
-    var canSnackooPoison: Bool { Rules.canSnackooPoison(human) }
+    var opponents: [OpponentView] { view?.opponents ?? [] }
+    var yourHand: [Card] { view?.yourHand ?? [] }
 
-    /// The value a card would contribute if played — shown on the card itself, so
-    /// mental arithmetic is never required.
-    func projectedTally(for card: Card, declaration: Declaration) -> Int? {
-        guard case .success(let effect) = Rules.resolve(card: card, declaration: declaration, in: state) else {
-            return nil
+    /// Cards legal against the current board. Computed from the redacted view,
+    /// through the same `Rules` the engine uses.
+    var playableCardIDs: Set<Int> {
+        guard let view, wellReveal == .idle, pendingChoice == nil, !view.isOver else { return [] }
+        return view.playableCardIDs
+    }
+
+    var options: TurnOptions {
+        coordinator.turnOptions() ?? TurnOptions(
+            canPlayFromHand: false, canUseWell: false, canSkip: false, isStranded: false
+        )
+    }
+
+    var snackooRanks: [Rank] {
+        guard let view else { return [] }
+        var counts: [Rank: Int] = [:]
+        for card in view.yourHand where card.rank != .queen {
+            counts[card.rank, default: 0] += 1
         }
+        return Rank.allCases.filter { (counts[$0] ?? 0) >= 3 }
+    }
+
+    var canSnackooPoison: Bool { (view?.yourPoisonPile.count ?? 0) >= 3 }
+
+    var handoffTargetName: String? { coordinator.handoffTargetName }
+    var handoffSeatNumber: Int {
+        guard let current = coordinator.currentPlayerID,
+              let index = participants.firstIndex(where: { $0.id == current })
+        else { return 1 }
+        return index + 1
+    }
+
+    func projectedTally(for card: Card, declaration: Declaration) -> Int? {
+        guard let view else { return nil }
+        guard case .success(let effect) = Rules.resolve(
+            card: card, declaration: declaration, in: view.rulesContext()
+        ) else { return nil }
         return effect.newTally
     }
 
@@ -174,28 +256,40 @@ final class GameViewModel: ObservableObject {
 
     func begin() async {
         SoundEngine.shared.warmUp()
-        // Let the deal animation play out before anyone can act.
+        do {
+            try await coordinator.start()
+        } catch {
+            announce(headline: "Couldn't deal", detail: error.localizedDescription, tone: .bad)
+            return
+        }
+        syncFromCoordinator()
+
         SoundEngine.shared.play(.shuffle, volume: 0.8)
-        try? await Task.sleep(for: .milliseconds(Int(Double(human.hand.count) * Motion.dealStagger * 1000) + 620))
+        let dealtCards = view?.yourHand.count ?? 6
+        try? await Task.sleep(for: .milliseconds(Int(Double(dealtCards) * Motion.dealStagger * 1000) + 620))
         isDealing = false
-        Haptics.shared.play(.turnStart)
-        await advanceIfAI()
+
+        if mode == .passAndPlay {
+            // The first player must confirm they're holding the device too,
+            // otherwise the deal is face-up in front of everyone.
+            refreshHandoff()
+        } else {
+            Haptics.shared.play(.turnStart)
+        }
+        await driveAITurns()
     }
 
     // MARK: - Player actions
 
-    /// The player tapped a card. Either plays it immediately, or asks for the
-    /// declaration it needs first.
     func tapCard(_ card: Card) {
-        guard isHumanTurn, !isDealing, wellReveal == .idle, pendingChoice == nil else { return }
+        guard isYourTurn, !isDealing, wellReveal == .idle, pendingChoice == nil,
+              let view else { return }
 
-        let declarations = Rules.legalDeclarations(for: card, in: state)
+        let declarations = Rules.legalDeclarations(for: card, in: view.rulesContext())
         guard !declarations.isEmpty else {
             reject(card)
             return
         }
-
-        // One legal way to play it: no need to ask.
         if declarations.count == 1 {
             Task { await commitPlay(card: card, declaration: declarations[0], fromWell: false) }
             return
@@ -222,11 +316,9 @@ final class GameViewModel: ObservableObject {
     private func reject(_ card: Card) {
         Haptics.shared.play(.rejected)
         SoundEngine.shared.play(.reject, volume: 0.7)
-        let message = Rules.blockingReason(for: card, in: state)?.explanation
+        let message = view.flatMap { Rules.blockingReason(for: card, in: $0.rulesContext())?.explanation }
             ?? "That card can't be played right now."
-        withAnimation(Motion.panel) {
-            rejection = Rejection(cardID: card.id, message: message)
-        }
+        withAnimation(Motion.panel) { rejection = Rejection(cardID: card.id, message: message) }
         Task {
             try? await Task.sleep(for: .seconds(2.6))
             withAnimation(Motion.panel) { if rejection?.cardID == card.id { rejection = nil } }
@@ -234,20 +326,12 @@ final class GameViewModel: ObservableObject {
     }
 
     func declareSnackoo(_ kind: GameEvent.SnackooKind) {
-        guard !state.isOver else { return }
+        guard let actor = viewingPlayerID else { return }
         Task {
-            do {
-                let events = try engine.declareSnackoo(by: humanID, kind: kind)
+            await submit(.snackoo(kind: PlayerAction.SnackooKind(kind)), by: actor) {
                 Haptics.shared.play(.snackoo)
                 SoundEngine.shared.play(.snackoo)
-                announce(
-                    headline: "Snackoo!",
-                    detail: snackooDetail(kind),
-                    tone: .good
-                )
-                await absorb(events)
-            } catch {
-                Haptics.shared.play(.rejected)
+                self.announce(headline: "Snackoo!", detail: self.snackooDetail(kind), tone: .good)
             }
         }
     }
@@ -259,59 +343,95 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    /// The player chose the well over a skip.
     func useWell() {
-        guard isHumanTurn, options.canUseWell else { return }
-        Task { await runWell(for: humanID) }
+        guard isYourTurn, options.canUseWell, let actor = viewingPlayerID else { return }
+        Task { await runWell(for: actor) }
     }
 
     func skipTurn() {
-        guard isHumanTurn, options.canSkip else { return }
+        guard isYourTurn, options.canSkip, let actor = viewingPlayerID else { return }
         Task {
-            do {
-                let events = try engine.skip(by: humanID)
+            await submit(.skip, by: actor) {
                 Haptics.shared.play(.cardLand)
-                announce(
+                self.announce(
                     headline: "Skipped",
-                    detail: "You owe two plays on your next turn.",
+                    detail: "Two plays owed next turn.",
                     tone: .neutral
                 )
-                await absorb(events)
-                await advanceIfAI()
-            } catch { Haptics.shared.play(.rejected) }
+            }
         }
     }
 
     func concede() {
+        guard let actor = viewingPlayerID else { return }
+        Task { await submit(.concede, by: actor) {} }
+    }
+
+    func acknowledgeHandoff() {
+        Haptics.shared.play(.turnStart)
+        coordinator.acknowledgeHandoff()
+        syncFromCoordinator()
+        awaitingHandoff = false
+        // A fresh hand deserves the deal animation, so the new player sees their
+        // cards arrive rather than blinking into existence.
+        isDealing = true
         Task {
-            guard let events = try? engine.concedeStranded(by: humanID) else { return }
-            await absorb(events)
-            await advanceIfAI()
+            try? await Task.sleep(for: .milliseconds(60))
+            withAnimation(Motion.deal) { isDealing = false }
         }
     }
 
-    // MARK: - Playing a card
+    // MARK: - Submitting
 
-    private func commitPlay(card: Card, declaration: Declaration, fromWell: Bool) async {
-        let events: [GameEvent]
-        do {
-            events = fromWell
-                ? try engine.resolveWell(by: humanID, declaration: declaration)
-                : try engine.play(cardID: card.id, by: humanID, declaration: declaration)
-        } catch {
-            reject(card)
+    /// Shared path for every action: submit, then pace the resulting events.
+    private func submit(
+        _ action: PlayerAction,
+        by playerID: String,
+        onAccepted: @escaping () -> Void
+    ) async {
+        let before = coordinator.actionLog.count
+        await coordinator.submit(action, by: playerID)
+
+        if let error = coordinator.lastError {
+            coordinator.lastError = nil
+            Haptics.shared.play(.rejected)
+            announce(headline: "Not legal", detail: error, tone: .bad)
             return
         }
+        guard coordinator.actionLog.count > before else { return }
 
-        // Card flight first, then the consequences.
+        onAccepted()
+        await absorb(coordinator.consumeEvents())
+        await driveAITurns()
+    }
+
+    private func commitPlay(card: Card, declaration: Declaration, fromWell: Bool) async {
+        guard let actor = viewingPlayerID else { return }
+
         Haptics.shared.play(.cardFlick)
         SoundEngine.shared.play(.cardFlick)
         withAnimation(Motion.cardFlight) { cardInFlight = card }
+
+        let action: PlayerAction = fromWell
+            ? .resolveWell(declaration: declaration)
+            : .play(cardID: card.id, declaration: declaration)
+
+        let before = coordinator.actionLog.count
+        await coordinator.submit(action, by: actor)
+
         try? await Task.sleep(for: .milliseconds(150))
         cardInFlight = nil
 
-        await absorb(events)
-        await advanceIfAI()
+        if let error = coordinator.lastError {
+            coordinator.lastError = nil
+            reject(card)
+            _ = error
+            return
+        }
+        guard coordinator.actionLog.count > before else { return }
+
+        await absorb(coordinator.consumeEvents())
+        await driveAITurns()
     }
 
     // MARK: - The well
@@ -322,14 +442,15 @@ final class GameViewModel: ObservableObject {
         SoundEngine.shared.play(.wellRoll)
         try? await Task.sleep(for: .milliseconds(950))
 
-        let events: [GameEvent]
-        do {
-            events = try engine.drawFromWell(by: playerID)
-        } catch {
+        let before = coordinator.actionLog.count
+        await coordinator.submit(.drawFromWell, by: playerID)
+        guard coordinator.actionLog.count > before else {
+            coordinator.lastError = nil
             withAnimation(Motion.drama) { wellReveal = .idle }
             return
         }
 
+        let events = coordinator.consumeEvents()
         guard case .wellRevealed(let card, _, let playable) = events.first else {
             withAnimation(Motion.drama) { wellReveal = .idle }
             await absorb(events)
@@ -346,33 +467,59 @@ final class GameViewModel: ObservableObject {
             Haptics.shared.play(.eliminated)
             SoundEngine.shared.play(.eliminated)
         }
-        // Hold on the verdict so it registers as a moment.
         try? await Task.sleep(for: .milliseconds(playable ? 1_250 : 1_900))
         withAnimation(Motion.drama) { wellReveal = .idle }
 
-        // Absorb *after* the reveal, since an unplayable card eliminates here.
         await absorb(events)
 
-        // A playable well card still needs its declaration.
-        if playable, let pending = state.pendingWell, pending.playerID == playerID {
-            if playerID == humanID {
-                let declarations = Rules.legalDeclarations(for: pending.card, in: state)
-                if declarations.count == 1 {
-                    await commitPlay(card: pending.card, declaration: declarations[0], fromWell: true)
-                } else {
-                    withAnimation(Motion.panel) {
-                        pendingChoice = PendingChoice(card: pending.card, options: declarations, isFromWell: true)
-                    }
+        if playable, let pending = view?.pendingWell, pending.playerID == playerID, let view {
+            let declarations = Rules.legalDeclarations(for: pending.card, in: view.rulesContext())
+            if declarations.count == 1 {
+                await commitPlay(card: pending.card, declaration: declarations[0], fromWell: true)
+            } else {
+                withAnimation(Motion.panel) {
+                    pendingChoice = PendingChoice(card: pending.card, options: declarations, isFromWell: true)
                 }
-                return
             }
+            return
         }
-        await advanceIfAI()
+        await driveAITurns()
     }
 
-    // MARK: - Absorbing engine events
+    // MARK: - AI
 
-    /// Walk an event timeline, spacing the dramatic beats and firing feedback.
+    /// Pump AI seats one move at a time, pacing each so the table stays readable.
+    private func driveAITurns() async {
+        guard !isDrivingAI else { return }
+        isDrivingAI = true
+        defer { isDrivingAI = false }
+
+        var safety = 0
+        while coordinator.isAITurn, !coordinator.isOver, safety < 400 {
+            safety += 1
+            let thinker = coordinator.currentPlayerID
+            thinkingPlayerID = thinker
+            try? await Task.sleep(for: .seconds(Double.random(in: coordinator.currentAIThinkingDelay)))
+            thinkingPlayerID = nil
+
+            guard coordinator.stepAI() != nil else { break }
+            await absorb(coordinator.consumeEvents())
+        }
+
+        syncFromCoordinator()
+        refreshHandoff()
+
+        if isYourTurn, options.isStranded {
+            announce(
+                headline: "Nowhere to go",
+                detail: "No legal card, no well, and a play owed.",
+                tone: .bad
+            )
+        }
+    }
+
+    // MARK: - Event choreography
+
     private func absorb(_ events: [GameEvent]) async {
         for event in events {
             switch event {
@@ -380,7 +527,7 @@ final class GameViewModel: ObservableObject {
                 let delta = to - from
                 let pressure = to > 0 ? min(1, Double(to) / 99.0) : 0
                 withAnimation(Motion.tallyTick) {
-                    state = engine.state
+                    syncFromCoordinator()
                     tallyDelta = delta
                 }
                 if delta != 0 {
@@ -444,7 +591,7 @@ final class GameViewModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(900))
 
             case .queenPoisoned(_, let owner, let cap):
-                if owner == humanID {
+                if owner == viewingPlayerID {
                     Haptics.shared.play(.poison)
                     announce(
                         headline: "Queen exiled",
@@ -455,7 +602,7 @@ final class GameViewModel: ObservableObject {
                 }
 
             case .snackoo(let by, let kind):
-                if by != humanID {
+                if by != viewingPlayerID {
                     SoundEngine.shared.play(.snackoo, volume: 0.7)
                     announce(headline: "\(name(of: by)): Snackoo!", detail: snackooDetail(kind), tone: .neutral)
                     try? await Task.sleep(for: .milliseconds(500))
@@ -465,118 +612,80 @@ final class GameViewModel: ObservableObject {
                 SoundEngine.shared.play(.shuffle, volume: 0.6)
                 announce(headline: "Reshuffled", detail: "The discards are back in play.", tone: .neutral)
 
-            case .cardPlayed(let card, let by, _) where by != humanID:
-                // The opponent's card lands here so it's visible before the tally
-                // moves — the eye should follow the card, then the number.
+            case .cardPlayed(let card, let by, _) where by != viewingPlayerID:
                 SoundEngine.shared.play(.cardLand, volume: 0.8)
                 withAnimation(Motion.cardFlight) {
                     cardInFlight = card
-                    state = engine.state
+                    syncFromCoordinator()
                 }
                 try? await Task.sleep(for: .milliseconds(180))
                 cardInFlight = nil
 
             case .playerEliminated(let id, let reason, _):
-                if id == humanID {
+                if id == viewingPlayerID {
                     Haptics.shared.play(.eliminated)
                     SoundEngine.shared.play(.eliminated)
                     announce(headline: "You're out", detail: reason.explanation, tone: .bad)
                 } else {
                     SoundEngine.shared.play(.eliminated, volume: 0.7)
-                    announce(
-                        headline: "\(name(of: id)) is out",
-                        detail: reason.explanation,
-                        tone: .good
-                    )
+                    announce(headline: "\(name(of: id)) is out", detail: reason.explanation, tone: .good)
                 }
-                withAnimation(Motion.drama) { state = engine.state }
+                withAnimation(Motion.drama) { syncFromCoordinator() }
                 try? await Task.sleep(for: .milliseconds(1_100))
 
             case .gameWon(let winner):
-                withAnimation(Motion.drama) { state = engine.state }
+                withAnimation(Motion.drama) { syncFromCoordinator() }
                 finish(winnerID: winner)
                 return
 
             case .turnAdvanced(let to, let owesTwo):
-                withAnimation(Motion.handReflow) { state = engine.state }
-                if to == humanID && !state.isOver {
+                withAnimation(Motion.handReflow) { syncFromCoordinator() }
+                if to == viewingPlayerID && !coordinator.isOver {
                     Haptics.shared.play(.turnStart)
                     if owesTwo {
                         announce(
-                            headline: "You owe two plays",
+                            headline: "Two plays owed",
                             detail: "Both must be legal. You can't skip again.",
                             tone: .danger
                         )
                     }
                 }
 
-            case .drewCards, .wellPlayed, .wellBonusDrawn, .turnSkipped,
-                 .extraPlayOwed, .dealt, .forcedNegativeConsumed, .wellRevealed,
-                 .cardPlayed:
-                withAnimation(Motion.handReflow) { state = engine.state }
+            default:
+                withAnimation(Motion.handReflow) { syncFromCoordinator() }
             }
         }
 
-        state = engine.state
-        records.record(events: events, humanID: humanID, state: state)
-        surfaceAchievementToast()
+        syncFromCoordinator()
+        refreshHandoff()
+        recordProgress(events)
     }
 
-    // MARK: - AI turns
+    // MARK: - Syncing
 
-    /// Drive every consecutive AI turn until it's the human's move again.
-    private func advanceIfAI() async {
-        guard !isRunningAI else { return }
-        isRunningAI = true
-        defer { isRunningAI = false }
+    private func syncFromCoordinator() {
+        view = coordinator.view
+    }
 
-        var safety = 0
-        while !state.isOver && state.currentPlayer.id != humanID && safety < 400 {
-            safety += 1
-            let current = state.currentPlayer
-            let ai = AIPlayer(difficulty: current.kind.difficulty ?? difficulty)
-
-            thinkingPlayerID = current.id
-            let delay = Double.random(in: ai.thinkingDelay)
-            try? await Task.sleep(for: .seconds(delay))
-            thinkingPlayerID = nil
-
-            guard let move = ai.nextMove(for: current.id, engine: engine) else { break }
-
-            switch move.kind {
-            case .play(let cardID, let declaration):
-                if state.pendingWell?.card.id == cardID {
-                    guard let events = try? engine.resolveWell(by: current.id, declaration: declaration) else { break }
-                    await absorb(events)
-                } else {
-                    guard let events = try? engine.play(cardID: cardID, by: current.id, declaration: declaration) else {
-                        break
-                    }
-                    await absorb(events)
-                }
-            case .useWell:
-                await runWell(for: current.id)
-            case .skip:
-                guard let events = try? engine.skip(by: current.id) else { break }
-                announce(headline: "\(current.name) skips", detail: move.rationale, tone: .neutral)
-                await absorb(events)
-            case .snackoo(let kind):
-                guard let events = try? engine.declareSnackoo(by: current.id, kind: kind) else { break }
-                await absorb(events)
-            case .concede:
-                guard let events = try? engine.concedeStranded(by: current.id) else { break }
-                await absorb(events)
-            }
+    private func refreshHandoff() {
+        guard mode == .passAndPlay else {
+            awaitingHandoff = false
+            return
         }
-
-        // A human turn that begins already stranded needs surfacing, not silence.
-        if isHumanTurn, options.isStranded {
-            announce(
-                headline: "Nowhere to go",
-                detail: "No legal card, no well, and a play owed.",
-                tone: .bad
-            )
+        let shouldCover = coordinator.awaitingHandoff && !coordinator.isOver
+        if shouldCover != awaitingHandoff {
+            withAnimation(Motion.drama) { awaitingHandoff = shouldCover }
         }
+    }
+
+    // MARK: - Records
+
+    /// Only solo games touch the lifetime record. A pass-and-play win belongs to
+    /// whoever was holding the phone, not to the device's owner.
+    private func recordProgress(_ events: [GameEvent]) {
+        guard let recordedPlayerID, let view else { return }
+        records.record(events: events, humanID: recordedPlayerID, state: view.rulesContext())
+        surfaceAchievementToast()
     }
 
     // MARK: - Endgame
@@ -585,27 +694,46 @@ final class GameViewModel: ObservableObject {
         guard !hasRecordedEnd else { return }
         hasRecordedEnd = true
 
-        let won = winnerID == humanID
+        let standings = coordinator.finishingOrder
+        let subjectID = recordedPlayerID ?? viewingPlayerID
+        let won = winnerID == subjectID
+
         if won {
             Haptics.shared.play(.victory)
             SoundEngine.shared.play(.victory)
             outcome = .won
         } else {
-            outcome = .lost(
-                position: Standings.position(
-                    eliminationRank: human.eliminationRank,
-                    of: state.players.count
-                )
-            )
+            let position = standings.first { $0.participant.id == subjectID }?.position
+                ?? participants.count
+            outcome = .lost(position: position)
         }
-        records.recordGameEnd(won: won, state: state, humanID: humanID, difficulty: difficulty)
-        surfaceAchievementToast()
+
+        if let recordedPlayerID, let view {
+            records.recordGameEnd(
+                won: won,
+                state: view.rulesContext(),
+                humanID: recordedPlayerID,
+                difficulty: difficulty
+            )
+            surfaceAchievementToast()
+        }
+    }
+
+    /// Final standings for the game-over screen.
+    var finishingOrder: [(participant: MatchParticipant, position: Int)] {
+        coordinator.finishingOrder
+    }
+
+    var winnerName: String? {
+        guard let id = coordinator.winnerID else { return nil }
+        return participants.first { $0.id == id }?.name
     }
 
     // MARK: - Helpers
 
     private func name(of playerID: String) -> String {
-        playerID == humanID ? "You" : (state.player(id: playerID)?.name ?? "Someone")
+        if playerID == viewingPlayerID { return "You" }
+        return participants.first { $0.id == playerID }?.name ?? "Someone"
     }
 
     private func announce(headline: String, detail: String?, tone: Announcement.Tone) {

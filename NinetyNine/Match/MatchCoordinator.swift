@@ -55,9 +55,10 @@ final class MatchCoordinator: ObservableObject {
     init(transport: MatchTransport, mode: MatchMode) {
         self.transport = transport
         self.mode = mode
+        // Synchronous: `send` must not return before the move has been applied,
+        // or callers read a stale action log and think they were refused.
         transport.onUpdate = { [weak self] update in
-            guard let self else { return }
-            Task { @MainActor in self.handle(update) }
+            self?.handle(update)
         }
     }
 
@@ -99,6 +100,10 @@ final class MatchCoordinator: ObservableObject {
                 seed: seed
             )
             refreshView()
+            // The opening deal needs the hand-off armed too, or the first
+            // player's cards are face up in front of the whole table. Nothing
+            // else calls this until the first action lands.
+            updateHandoffState()
             Task { await driveAITurns() }
         } catch {
             lastError = error.localizedDescription
@@ -178,43 +183,75 @@ final class MatchCoordinator: ObservableObject {
 
     // MARK: AI
 
-    /// Play out any consecutive AI turns. Only one of these runs at a time.
+    /// When false, AI turns must be pumped by the presentation layer via
+    /// `stepAI()`. How long an opponent appears to think is *feel*, not rules,
+    /// so it belongs to whoever is drawing the table — not in here, where it
+    /// would fight the animation choreography for control of the pacing.
+    var autoDriveAI = true
+
+    /// True when the seat to play is driven by AI in this process.
+    var isAITurn: Bool {
+        guard let engine, !engine.state.isOver else { return false }
+        return participants
+            .first { $0.id == engine.state.currentPlayer.id }?
+            .kind.difficulty != nil
+    }
+
+    /// Take exactly one AI action, if it's an AI's turn. Returns the events it
+    /// produced, or nil if there was nothing to do.
+    @discardableResult
+    func stepAI() -> [GameEvent]? {
+        guard let engine, !engine.state.isOver else { return nil }
+        let currentID = engine.state.currentPlayer.id
+        guard let participant = participants.first(where: { $0.id == currentID }),
+              let difficulty = participant.kind.difficulty
+        else { return nil }
+
+        let ai = AIPlayer(difficulty: difficulty)
+        guard let move = ai.nextMove(for: currentID, engine: engine) else { return nil }
+
+        let action: PlayerAction
+        switch move.kind {
+        case .play(let cardID, let declaration):
+            action = engine.state.pendingWell?.card.id == cardID
+                ? .resolveWell(declaration: declaration)
+                : .play(cardID: cardID, declaration: declaration)
+        case .useWell: action = .drawFromWell
+        case .skip: action = .skip
+        case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
+        case .concede: action = .concede
+        }
+
+        let submitted = SubmittedAction(playerID: currentID, action: action, sequence: sequence)
+        sequence += 1
+        guard let events = try? engine.apply(submitted) else { return nil }
+        actionLog.append(submitted)
+        absorb(events)
+        return events
+    }
+
+    /// How long the current AI seat should appear to think.
+    var currentAIThinkingDelay: ClosedRange<Double> {
+        guard let engine,
+              let difficulty = participants
+                .first(where: { $0.id == engine.state.currentPlayer.id })?.kind.difficulty
+        else { return 0.5...0.8 }
+        return AIPlayer(difficulty: difficulty).thinkingDelay
+    }
+
+    /// Play out consecutive AI turns with their own pacing. Only used when
+    /// `autoDriveAI` is true (headless tests, previews).
     private func driveAITurns() async {
-        guard !isDrivingAI else { return }
+        guard autoDriveAI, !isDrivingAI else { return }
         isDrivingAI = true
         defer { isDrivingAI = false }
 
         var safety = 0
-        while let engine, !engine.state.isOver, safety < 400 {
+        while isAITurn, safety < 400 {
             safety += 1
-            let currentID = engine.state.currentPlayer.id
-            guard let participant = participants.first(where: { $0.id == currentID }),
-                  let difficulty = participant.kind.difficulty
-            else { break }
-
-            let ai = AIPlayer(difficulty: difficulty)
-            try? await Task.sleep(for: .seconds(Double.random(in: ai.thinkingDelay)))
-
-            guard let move = ai.nextMove(for: currentID, engine: engine) else { break }
-            let action: PlayerAction
-            switch move.kind {
-            case .play(let cardID, let declaration):
-                action = engine.state.pendingWell?.card.id == cardID
-                    ? .resolveWell(declaration: declaration)
-                    : .play(cardID: cardID, declaration: declaration)
-            case .useWell: action = .drawFromWell
-            case .skip: action = .skip
-            case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
-            case .concede: action = .concede
-            }
-
-            let submitted = SubmittedAction(playerID: currentID, action: action, sequence: sequence)
-            sequence += 1
-            guard let events = try? engine.apply(submitted) else { break }
-            actionLog.append(submitted)
-            absorb(events)
+            try? await Task.sleep(for: .seconds(Double.random(in: currentAIThinkingDelay)))
+            guard stepAI() != nil else { break }
         }
-
         updateHandoffState()
     }
 
@@ -294,6 +331,23 @@ final class MatchCoordinator: ObservableObject {
 
     var isOver: Bool { engine?.state.isOver ?? false }
     var winnerID: String? { engine?.state.winnerID }
+    var currentPlayerID: String? { engine?.state.currentPlayer.id }
+
+    /// Final standings, for the game-over screen. Derived from elimination order.
+    var finishingOrder: [(participant: MatchParticipant, position: Int)] {
+        guard let engine else { return [] }
+        return participants.compactMap { participant in
+            guard let seat = engine.state.player(id: participant.id) else { return nil }
+            return (
+                participant,
+                Standings.position(
+                    eliminationRank: seat.eliminationRank,
+                    of: engine.state.players.count
+                )
+            )
+        }
+        .sorted { $0.1 < $1.1 }
+    }
 
     func availableActions(for playerID: String) -> [PlayerAction] {
         engine?.availableActions(for: playerID) ?? []

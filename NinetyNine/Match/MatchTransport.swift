@@ -58,6 +58,14 @@ enum MatchUpdate: Sendable {
 /// Deliberately small. A transport moves `SubmittedAction`s and reports who is
 /// present — it knows nothing about the rules, and cannot be a second place
 /// where legality is decided.
+///
+/// `@MainActor` on purpose: updates are delivered synchronously to the
+/// coordinator so that by the time `send` returns, the move has been applied.
+/// Hopping through a `Task` instead meant callers saw a stale action log and
+/// concluded their own move had been rejected. A transport whose callbacks
+/// arrive on another thread (GameKit will) hops to the main actor itself — that
+/// is the adapter's job, not its callers'.
+@MainActor
 protocol MatchTransport: AnyObject {
     /// The id of the player using this device.
     var localPlayerID: String { get }
@@ -87,6 +95,7 @@ protocol MatchTransport: AnyObject {
 /// It can also simulate latency and delivery failure, so the layers above get
 /// exercised against a transport that isn't instantaneous and perfect — which
 /// is the state GameKit will actually be in.
+@MainActor
 final class LoopbackTransport: MatchTransport {
 
     let localPlayerID: String
