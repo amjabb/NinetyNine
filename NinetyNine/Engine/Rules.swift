@@ -353,4 +353,16 @@ enum Rules {
     static func canSnackooPoison(_ player: PlayerState) -> Bool {
         player.poisonPile.count >= 3
     }
+
+    /// Does this card complete a three-of-a-kind with two already in hand?
+    ///
+    /// Used for the well rescue: a revealed well card that can't be played would
+    /// normally eliminate its owner, but if it's the third of a rank they can
+    /// Snackoo out of it instead. Queens are excluded for the same reason they
+    /// are excluded from a hand Snackoo — their route out is the poison pile.
+    static func rankCompletedInHand(by card: Card, for player: PlayerState) -> Rank? {
+        guard card.rank != .queen else { return nil }
+        let matching = player.hand.filter { $0.rank == card.rank }.count
+        return matching >= 2 ? card.rank : nil
+    }
 }

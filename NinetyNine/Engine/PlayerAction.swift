@@ -28,6 +28,13 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// Play the well card that has just been revealed.
     case resolveWell(declaration: Declaration)
 
+    /// The revealed well card is unplayable but completes a three-of-a-kind:
+    /// Snackoo out of it rather than be eliminated.
+    case snackooWellCard
+
+    /// Accept elimination from an unplayable well card.
+    case concedeWellCard
+
     /// Skip the turn, taking on a two-play debt.
     case skip
 
@@ -108,6 +115,12 @@ extension GameEngine {
         case .resolveWell(let declaration):
             return try resolveWell(by: playerID, declaration: declaration)
 
+        case .snackooWellCard:
+            return try snackooWellCard(by: playerID)
+
+        case .concedeWellCard:
+            return try concedeWellCard(by: playerID)
+
         case .skip:
             return try skip(by: playerID)
 
@@ -143,8 +156,15 @@ extension GameEngine {
 
         // A revealed well card must be resolved before anything else.
         if let pending = state.pendingWell, pending.playerID == playerID {
-            for declaration in Rules.legalDeclarations(for: pending.card, in: state) {
-                actions.append(.resolveWell(declaration: declaration))
+            if pending.isPlayable {
+                for declaration in Rules.legalDeclarations(for: pending.card, in: state) {
+                    actions.append(.resolveWell(declaration: declaration))
+                }
+            } else if pending.snackooRank != nil {
+                // Unplayable, but the third of its rank — offer the way out
+                // before the way down.
+                actions.append(.snackooWellCard)
+                actions.append(.concedeWellCard)
             }
             return actions
         }

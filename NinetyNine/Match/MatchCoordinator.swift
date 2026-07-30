@@ -220,7 +220,11 @@ final class MatchCoordinator: ObservableObject {
             case .useWell: action = .drawFromWell(slot: 0)
         case .skip: action = .skip
         case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
-        case .concede: action = .concede
+        case .snackooWell: action = .snackooWellCard
+        case .concede:
+            // A pending unplayable well card is conceded through its own action,
+            // which clears the reveal; plain concede would leave it dangling.
+            action = engine.state.pendingWell != nil ? .concedeWellCard : .concede
         }
 
         let submitted = SubmittedAction(playerID: currentID, action: action, sequence: sequence)

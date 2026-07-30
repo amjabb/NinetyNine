@@ -92,6 +92,9 @@ final class GameViewModel: ObservableObject {
         case choosing(playerID: String, slots: Int)
         case rolling(playerID: String)
         case revealed(card: Card, playable: Bool, playerID: String)
+        /// Unplayable, but the third of its rank — the player is offered the
+        /// Snackoo before being told they're out.
+        case rescue(card: Card, rank: Rank, playerID: String)
     }
 
     struct PendingChoice: Identifiable, Equatable {
@@ -411,6 +414,38 @@ final class GameViewModel: ObservableObject {
         Task { await runWell(for: actor, slot: slot) }
     }
 
+    /// Take the reprieve on an unplayable well card that completes a trio.
+    func takeWellSnackoo() {
+        guard case .rescue(_, _, let actor) = wellReveal else { return }
+        withAnimation(Motion.drama) { wellReveal = .idle }
+        Task {
+            await submit(.snackooWellCard, by: actor) {
+                Haptics.shared.play(.snackoo)
+                SoundEngine.shared.play(.snackoo)
+                self.announce(
+                    headline: "Snackoo!",
+                    detail: "Out of the well by the skin of your teeth. Three fresh cards — and you still owe a play.",
+                    tone: .good
+                )
+            }
+        }
+    }
+
+    /// Decline it and accept elimination.
+    func declineWellSnackoo() {
+        guard case .rescue(_, _, let actor) = wellReveal else { return }
+        withAnimation(Motion.drama) { wellReveal = .idle }
+        Task { await submit(.concedeWellCard, by: actor) {} }
+    }
+
+    /// The rank the engine is offering as a rescue, if any.
+    private func coordinatorPendingWellRank(for playerID: String) -> Rank? {
+        guard let pending = coordinator.view?.pendingWell, pending.playerID == playerID else {
+            return nil
+        }
+        return pending.snackooRank
+    }
+
     func cancelWellChoice() {
         Haptics.shared.play(.select)
         withAnimation(Motion.drama) { wellReveal = .idle }
@@ -525,20 +560,35 @@ final class GameViewModel: ObservableObject {
             return
         }
 
+        // Unplayable, but the third of its rank: hold on the reveal and offer the
+        // way out rather than announcing a loss the player can still avoid.
+        let rescueRank = view?.pendingWell?.snackooRank
+            ?? coordinatorPendingWellRank(for: playerID)
+
         withAnimation(Motion.drama) {
             wellReveal = .revealed(card: card, playable: playable, playerID: playerID)
         }
         if playable {
             Haptics.shared.play(.wellSurvive)
             SoundEngine.shared.play(.wellSurvive)
+        } else if rescueRank != nil {
+            Haptics.shared.play(.snackoo)
+            SoundEngine.shared.play(.snackoo, volume: 0.8)
         } else {
             Haptics.shared.play(.eliminated)
             SoundEngine.shared.play(.eliminated)
         }
-        try? await Task.sleep(for: .milliseconds(playable ? 1_250 : 1_900))
-        withAnimation(Motion.drama) { wellReveal = .idle }
+        try? await Task.sleep(for: .milliseconds(playable ? 1_250 : 1_500))
 
         await absorb(events)
+
+        if !playable, let rank = rescueRank ?? view?.pendingWell?.snackooRank {
+            withAnimation(Motion.drama) {
+                wellReveal = .rescue(card: card, rank: rank, playerID: playerID)
+            }
+            return
+        }
+        withAnimation(Motion.drama) { wellReveal = .idle }
 
         if playable, let pending = view?.pendingWell, pending.playerID == playerID, let view {
             let declarations = Rules.legalDeclarations(for: pending.card, in: view.rulesContext())

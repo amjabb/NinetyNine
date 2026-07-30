@@ -157,7 +157,13 @@ final class RedactionTests: XCTestCase {
                 case .useWell: try engine.drawFromWell(by: current.id, slot: 0)
                 case .skip: try engine.skip(by: current.id)
                 case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-                case .concede: try engine.concedeStranded(by: current.id)
+                case .snackooWell: try engine.snackooWellCard(by: current.id)
+                case .concede:
+                    if engine.state.pendingWell != nil {
+                        try engine.concedeWellCard(by: current.id)
+                    } else {
+                        try engine.concedeStranded(by: current.id)
+                    }
                 }
             }
 
@@ -366,6 +372,7 @@ final class ReplayTests: XCTestCase {
             case .useWell: action = .drawFromWell(slot: 0)
             case .skip: action = .skip
             case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
+            case .snackooWell: action = .snackooWellCard
             case .concede: action = .concede
             }
 

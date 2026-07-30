@@ -643,8 +643,14 @@ final class EngineTests: XCTestCase {
                     try engine.skip(by: current.id)
                 case .snackoo(let kind):
                     try engine.declareSnackoo(by: current.id, kind: kind)
+                case .snackooWell:
+                    try engine.snackooWellCard(by: current.id)
                 case .concede:
-                    try engine.concedeStranded(by: current.id)
+                    if engine.state.pendingWell != nil {
+                        try engine.concedeWellCard(by: current.id)
+                    } else {
+                        try engine.concedeStranded(by: current.id)
+                    }
                 }
             }
             XCTAssertTrue(engine.state.isOver, "Seed \(seed) did not finish in \(turns) turns")
@@ -676,7 +682,13 @@ final class EngineTests: XCTestCase {
             case .useWell: try engine.drawFromWell(by: current.id)
             case .skip: try engine.skip(by: current.id)
             case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-            case .concede: try engine.concedeStranded(by: current.id)
+                case .snackooWell: try engine.snackooWellCard(by: current.id)
+            case .concede:
+                    if engine.state.pendingWell != nil {
+                        try engine.concedeWellCard(by: current.id)
+                    } else {
+                        try engine.concedeStranded(by: current.id)
+                    }
             }
             // The tally may only exceed 99 in the single 100 slot.
             if engine.state.tally == 100 {
@@ -706,7 +718,13 @@ final class EngineTests: XCTestCase {
             case .useWell: try engine.drawFromWell(by: current.id)
             case .skip: try engine.skip(by: current.id)
             case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-            case .concede: try engine.concedeStranded(by: current.id)
+                case .snackooWell: try engine.snackooWellCard(by: current.id)
+            case .concede:
+                    if engine.state.pendingWell != nil {
+                        try engine.concedeWellCard(by: current.id)
+                    } else {
+                        try engine.concedeStranded(by: current.id)
+                    }
             }
         }
         guard let out = engine.state.players.first(where: { $0.isEliminated }) else {

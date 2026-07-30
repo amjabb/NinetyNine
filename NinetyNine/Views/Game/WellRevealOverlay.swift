@@ -18,6 +18,10 @@ struct WellRevealOverlay: View {
     /// Called with the slot the player picked, while choosing.
     var onChoose: (Int) -> Void = { _ in }
     var onCancel: () -> Void = {}
+    /// Take the Snackoo reprieve on an unplayable card that completes a trio.
+    var onSnackoo: () -> Void = {}
+    /// Decline it and accept elimination.
+    var onDecline: () -> Void = {}
 
     @Environment(\.motion) private var motion
     @State private var shuffleOffset: CGFloat = 0
@@ -66,8 +70,11 @@ struct WellRevealOverlay: View {
     // MARK: Cards
 
     private var captionForHuman: String {
-        if case .choosing = phase { return "Pick one. You won't know until you turn it." }
-        return "One card. Everything rides on it."
+        switch phase {
+        case .choosing: return "Pick one. You won't know until you turn it."
+        case .rescue: return "It won't play — but it's your third."
+        default: return "One card. Everything rides on it."
+        }
     }
 
     @ViewBuilder
@@ -117,6 +124,21 @@ struct WellRevealOverlay: View {
                 guard let ambient = motion.ambient(Motion.breathe(0.34)) else { return }
                 withAnimation(ambient) { shuffleOffset = 26 }
             }
+
+        case .rescue(let card, _, _):
+            // Struck through, because it genuinely cannot be played — the way out
+            // is the Snackoo, not the card.
+            FlippableCard(card: card, isFaceUp: true, isPlayable: false)
+                .frame(width: 168)
+                .cardShadow(lift: 26)
+                .overlay {
+                    Rectangle()
+                        .fill(Palette.danger)
+                        .frame(height: 5)
+                        .rotationEffect(.degrees(-24))
+                        .shadow(color: Palette.danger.opacity(0.8), radius: 8)
+                }
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
 
         case .revealed(let card, let playable, _):
             FlippableCard(card: card, isFaceUp: true, isPlayable: playable)
@@ -185,6 +207,38 @@ struct WellRevealOverlay: View {
             Text("Drawing…")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.ivoryDim)
+
+        case .rescue(_, let rank, _):
+            VStack(spacing: 14) {
+                Text("SNACKOO!")
+                    .font(.system(size: 26, weight: .black, design: .serif))
+                    .tracking(2)
+                    .foregroundStyle(Palette.brassLight)
+                Text("That's your third \(rank.displayName). Discard all three and draw three fresh — you'll still owe a play.")
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.ivory.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+
+                BrassButton(
+                    title: "Snackoo",
+                    subtitle: "three \(rank.displayName)s",
+                    icon: "sparkles",
+                    isProminent: true,
+                    action: onSnackoo
+                )
+                Button(action: onDecline) {
+                    Text("Accept the loss")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.ivoryDim)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 18)
+            .transition(.opacity.combined(with: .offset(y: 12)))
 
         case .revealed(let card, let playable, _):
             VStack(spacing: 8) {

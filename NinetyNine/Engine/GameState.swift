@@ -86,6 +86,11 @@ struct PendingWell: Codable, Hashable, Sendable {
     var playerID: String
     var card: Card
     var isPlayable: Bool
+    /// Set when the card is *unplayable* but completes a three-of-a-kind with
+    /// the player's hand. An unplayable well card normally ends the game for its
+    /// owner — this is the one way out, and it must be offered before they're
+    /// told they've lost.
+    var snackooRank: Rank?
 }
 
 // MARK: - Game state

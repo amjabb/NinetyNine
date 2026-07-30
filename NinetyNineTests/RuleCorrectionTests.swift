@@ -62,7 +62,13 @@ final class HandCapTests: XCTestCase {
             case .useWell: try engine.drawFromWell(by: current.id, slot: 0)
             case .skip: try engine.skip(by: current.id)
             case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-            case .concede: try engine.concedeStranded(by: current.id)
+            case .snackooWell: try engine.snackooWellCard(by: current.id)
+            case .concede:
+                if engine.state.pendingWell != nil {
+                    try engine.concedeWellCard(by: current.id)
+                } else {
+                    try engine.concedeStranded(by: current.id)
+                }
             }
             if let hand = engine.state.player(id: me)?.hand.count { counts.append(hand) }
         }
@@ -132,7 +138,13 @@ final class PoisonedQueenTests: XCTestCase {
                 case .useWell: try engine.drawFromWell(by: current.id, slot: 0)
                 case .skip: try engine.skip(by: current.id)
                 case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-                case .concede: try engine.concedeStranded(by: current.id)
+                case .snackooWell: try engine.snackooWellCard(by: current.id)
+                case .concede:
+                    if engine.state.pendingWell != nil {
+                        try engine.concedeWellCard(by: current.id)
+                    } else {
+                        try engine.concedeStranded(by: current.id)
+                    }
                 }
             }
             guard engine.state.queensArePoisonous else { continue }
@@ -219,7 +231,13 @@ final class WellChoiceTests: XCTestCase {
             case .useWell: try engine.drawFromWell(by: current.id, slot: 0)
             case .skip: try engine.skip(by: current.id)
             case .snackoo(let kind): try engine.declareSnackoo(by: current.id, kind: kind)
-            case .concede: try engine.concedeStranded(by: current.id)
+            case .snackooWell: try engine.snackooWellCard(by: current.id)
+            case .concede:
+                if engine.state.pendingWell != nil {
+                    try engine.concedeWellCard(by: current.id)
+                } else {
+                    try engine.concedeStranded(by: current.id)
+                }
             }
         }
         return nil
@@ -329,5 +347,150 @@ final class WellChoiceTests: XCTestCase {
             return
         }
         throw XCTSkip("No seed produced a survivable well draw")
+    }
+}
+
+// MARK: - The well rescue
+
+final class WellSnackooRescueTests: XCTestCase {
+
+    /// Reported from real play: two 6s in hand, the last well card a third 6.
+    /// The card is unplayable, but three of a kind is a Snackoo — the player
+    /// should be offered it *before* being told they've lost. The first release
+    /// eliminated them on the spot.
+    private func stuckWithTrio() throws -> (GameEngine, String, Rank) {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
+            dealerIndex: 1, handSize: 5, seed: 31337
+        )
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
+
+        // Two sixes in hand, a third in the well, and a tally that makes the
+        // six unplayable.
+        seeded.tally = 99
+        seeded.players[seat].hand = [
+            Card(id: 800, rank: .six, suit: .spades),
+            Card(id: 801, rank: .six, suit: .hearts),
+            Card(id: 802, rank: .king, suit: .clubs),
+        ]
+        seeded.players[seat].well = [Card(id: 803, rank: .six, suit: .diamonds)]
+        seeded.currentPlayerIndex = seat
+        engine._replaceStateForTesting(seeded)
+        return (engine, "a", .six)
+    }
+
+    func testAnUnplayableWellCardThatCompletesATrioDoesNotEliminate() throws {
+        let (engine, player, _) = try stuckWithTrio()
+
+        let events = try engine.drawFromWell(by: player, slot: 0)
+
+        XCTAssertFalse(
+            events.contains { if case .playerEliminated = $0 { return true }; return false },
+            "Being offered a Snackoo must come before being eliminated"
+        )
+        let pending = try XCTUnwrap(engine.state.pendingWell)
+        XCTAssertFalse(pending.isPlayable)
+        XCTAssertEqual(pending.snackooRank, .six, "The rescue rank should be offered")
+        XCTAssertFalse(try XCTUnwrap(engine.state.player(id: player)).isEliminated)
+    }
+
+    func testTakingTheRescueDiscardsThreeAndDrawsThree() throws {
+        let (engine, player, _) = try stuckWithTrio()
+        try engine.drawFromWell(by: player, slot: 0)
+
+        let before = try XCTUnwrap(engine.state.player(id: player)).hand.count
+        try engine.snackooWellCard(by: player)
+
+        let after = try XCTUnwrap(engine.state.player(id: player))
+        XCTAssertFalse(after.isEliminated, "The rescue should keep them in the game")
+        // Assert on identity, not on rank: a fourth six may legitimately arrive
+        // as one of the three replacements.
+        XCTAssertFalse(after.hand.contains { $0.id == 800 }, "The first six leaves the hand")
+        XCTAssertFalse(after.hand.contains { $0.id == 801 }, "The second six leaves the hand")
+        // Two out of hand, three in.
+        XCTAssertEqual(after.hand.count, before - 2 + 3)
+        XCTAssertNil(engine.state.pendingWell)
+        // All three sixes end up on the discard pile, the well card included.
+        for id in [800, 801, 803] {
+            XCTAssertTrue(
+                engine.state.discardPile.contains { $0.id == id },
+                "All three sixes should be on the discard pile, the well card included"
+            )
+        }
+    }
+
+    func testTheRescueIsFreeAndDoesNotCountAsTheTurnsPlay() throws {
+        let (engine, player, _) = try stuckWithTrio()
+        try engine.drawFromWell(by: player, slot: 0)
+        let owedBefore = engine.state.playsRemainingThisTurn
+
+        try engine.snackooWellCard(by: player)
+
+        XCTAssertEqual(engine.state.currentPlayer.id, player, "Still their turn")
+        XCTAssertEqual(
+            engine.state.playsRemainingThisTurn, owedBefore,
+            "Snackoo is a free action — it buys a fresh hand, not a free pass"
+        )
+    }
+
+    func testDecliningTheRescueStillEliminates() throws {
+        let (engine, player, _) = try stuckWithTrio()
+        try engine.drawFromWell(by: player, slot: 0)
+
+        let events = try engine.concedeWellCard(by: player)
+
+        XCTAssertTrue(events.contains { if case .playerEliminated = $0 { return true }; return false })
+        XCTAssertTrue(try XCTUnwrap(engine.state.player(id: player)).isEliminated)
+    }
+
+    func testAnUnplayableWellCardWithNoTrioStillEliminatesImmediately() throws {
+        // The rescue must not accidentally spare everyone.
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
+            dealerIndex: 1, handSize: 5, seed: 31337
+        )
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
+        seeded.tally = 99
+        seeded.players[seat].hand = [Card(id: 810, rank: .king, suit: .clubs)]
+        seeded.players[seat].well = [Card(id: 811, rank: .six, suit: .diamonds)]
+        seeded.currentPlayerIndex = seat
+        engine._replaceStateForTesting(seeded)
+
+        let events = try engine.drawFromWell(by: "a", slot: 0)
+        XCTAssertTrue(events.contains { if case .playerEliminated = $0 { return true }; return false })
+        XCTAssertTrue(try XCTUnwrap(engine.state.player(id: "a")).isEliminated)
+    }
+
+    func testBothOptionsAreOfferedToTheUI() throws {
+        let (engine, player, _) = try stuckWithTrio()
+        try engine.drawFromWell(by: player, slot: 0)
+
+        let actions = engine.availableActions(for: player)
+        XCTAssertTrue(actions.contains(.snackooWellCard), "The way out must be offered")
+        XCTAssertTrue(actions.contains(.concedeWellCard), "So must accepting the loss")
+    }
+
+    /// Queens keep their own route out (the poison pile), so a queen well card
+    /// is not a hand-trio rescue — consistent with hand Snackoo.
+    func testAQueenWellCardIsNotAHandTrioRescue() throws {
+        var player = PlayerState(id: "a", name: "A", kind: .human, handCap: 5)
+        player.hand = [
+            Card(id: 820, rank: .queen, suit: .spades),
+            Card(id: 821, rank: .queen, suit: .hearts),
+        ]
+        XCTAssertNil(
+            Rules.rankCompletedInHand(by: Card(id: 822, rank: .queen, suit: .clubs), for: player)
+        )
+        // But an ordinary rank is.
+        player.hand = [
+            Card(id: 823, rank: .four, suit: .spades),
+            Card(id: 824, rank: .four, suit: .hearts),
+        ]
+        XCTAssertEqual(
+            Rules.rankCompletedInHand(by: Card(id: 825, rank: .four, suit: .clubs), for: player),
+            .four
+        )
     }
 }

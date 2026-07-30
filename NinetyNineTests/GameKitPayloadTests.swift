@@ -110,6 +110,7 @@ final class GameKitPayloadTests: XCTestCase {
             case .useWell: action = .drawFromWell(slot: 0)
             case .skip: action = .skip
             case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
+            case .snackooWell: action = .snackooWellCard
             case .concede: action = .concede
             }
             let submitted = SubmittedAction(playerID: current.id, action: action, sequence: sequence)
@@ -152,6 +153,7 @@ final class GameKitPayloadTests: XCTestCase {
             case .useWell: action = .drawFromWell(slot: 0)
             case .skip: action = .skip
             case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
+            case .snackooWell: action = .snackooWellCard
             case .concede: action = .concede
             }
             let submitted = SubmittedAction(playerID: current.id, action: action, sequence: sequence)

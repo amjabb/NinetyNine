@@ -15,6 +15,8 @@ struct AIMove: Equatable, Sendable {
         case useWell
         case skip
         case snackoo(GameEvent.SnackooKind)
+        /// Take the reprieve on an unplayable well card that completes a trio.
+        case snackooWell
         case concede
     }
     var kind: Kind
@@ -37,6 +39,10 @@ struct AIPlayer {
 
         // A pending well reveal must be resolved before anything else.
         if let pending = state.pendingWell, pending.playerID == playerID {
+            if pending.snackooRank != nil {
+                // Strictly better than elimination — there is nothing to weigh.
+                return AIMove(kind: .snackooWell, rationale: "Snackoos out of the well")
+            }
             let declarations = Rules.legalDeclarations(for: pending.card, in: state)
             if let best = bestDeclaration(for: pending.card, among: declarations, player: player, state: state) {
                 return AIMove(
@@ -44,6 +50,8 @@ struct AIPlayer {
                     rationale: "rides the well card out"
                 )
             }
+            // Unplayable with no way out: accept it rather than stalling the turn.
+            return AIMove(kind: .concede, rationale: "is finished by the well")
         }
 
         // Snackoo is free — clear a full poison pile whenever possible, and dump

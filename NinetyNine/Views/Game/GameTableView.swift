@@ -351,7 +351,9 @@ struct GameTableView: View {
                 playerName: wellPlayerName,
                 isHuman: wellIsHuman,
                 onChoose: { viewModel.chooseWellCard(slot: $0) },
-                onCancel: { viewModel.cancelWellChoice() }
+                onCancel: { viewModel.cancelWellChoice() },
+                onSnackoo: { viewModel.takeWellSnackoo() },
+                onDecline: { viewModel.declineWellSnackoo() }
             )
         }
 
@@ -404,7 +406,7 @@ struct GameTableView: View {
 
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id):
+        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id), .rescue(_, _, let id):
             return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
             return ""
@@ -413,7 +415,7 @@ struct GameTableView: View {
 
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id):
+        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id), .rescue(_, _, let id):
             return id == viewModel.viewingPlayerID
         case .idle:
             return false

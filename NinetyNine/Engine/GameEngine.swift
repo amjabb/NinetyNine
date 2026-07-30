@@ -366,6 +366,15 @@ final class GameEngine {
 
         if playable {
             state.pendingWell = PendingWell(playerID: playerID, card: card, isPlayable: true)
+        } else if let rank = Rules.rankCompletedInHand(by: card, for: state.players[seat]) {
+            // The one reprieve: the card can't be played, but it's the third of
+            // its rank. Snackoo is a free action, so it would be wrong to declare
+            // the player out before offering it. Held pending — the player still
+            // has to take it.
+            state.pendingWell = PendingWell(
+                playerID: playerID, card: card, isPlayable: false, snackooRank: rank
+            )
+            note("\(state.players[seat].name) can Snackoo three \(rank.displayName)s instead of going out.")
         } else {
             events += eliminate(seat: seat, reason: .unplayableWellCard(card))
             events += advanceTurn()
@@ -522,6 +531,70 @@ final class GameEngine {
             canSkip: !hasPlay && !state.turnStartedWithDebt && state.pendingWell == nil,
             isStranded: !hasPlay && player.well.isEmpty && state.turnStartedWithDebt
         )
+    }
+
+    /// Take the reprieve: the unplayable well card is the third of its rank, so
+    /// it and the two in hand are discarded and three replacements drawn.
+    ///
+    /// This does **not** count as the player's play for the turn — Snackoo is a
+    /// free action. They still owe a play, and with the well now spent they may
+    /// yet be stranded. It buys a fresh hand, not a free pass.
+    @discardableResult
+    func snackooWellCard(by playerID: String) throws -> [GameEvent] {
+        guard let pending = state.pendingWell,
+              pending.playerID == playerID,
+              let rank = pending.snackooRank
+        else { throw GameError.snackooNotAvailable }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+
+        let matching = state.players[seat].hand.filter { $0.rank == rank }
+        guard matching.count >= 2 else { throw GameError.snackooNotAvailable }
+
+        for card in matching.prefix(2) {
+            state.players[seat].hand.removeAll { $0.id == card.id }
+            state.discardPile.append(card)
+        }
+        state.discardPile.append(pending.card)
+        state.pendingWell = nil
+
+        var events: [GameEvent] = [.snackoo(by: playerID, kind: .threeOfAKind(rank))]
+        note("\(state.players[seat].name) Snackoos three \(rank.displayName)s out of the well.")
+
+        var drawn = 0
+        while drawn < 3 {
+            var drawEvents: [GameEvent] = []
+            guard let landed = drawOne(into: seat, events: &drawEvents) else { break }
+            events += drawEvents
+            if landed { drawn += 1 }
+        }
+        if drawn > 0 {
+            events.append(.drewCards(count: drawn, by: playerID))
+            state.players[seat].hand = Self.sorted(state.players[seat].hand)
+        }
+
+        // Still stuck afterwards, with no well left and a debt owed? Then the
+        // reprieve only delayed things.
+        if !Rules.hasLegalPlay(playerID: playerID, in: state),
+           state.players[seat].well.isEmpty,
+           state.turnStartedWithDebt {
+            events += eliminate(seat: seat, reason: .strandedWithoutWell)
+            events += advanceTurn()
+        }
+        return events
+    }
+
+    /// Decline the reprieve — or have no reprieve to take. The revealed well card
+    /// eliminates its owner.
+    @discardableResult
+    func concedeWellCard(by playerID: String) throws -> [GameEvent] {
+        guard let pending = state.pendingWell, pending.playerID == playerID, !pending.isPlayable else {
+            throw GameError.noPendingWell
+        }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+        state.pendingWell = nil
+        var events = eliminate(seat: seat, reason: .unplayableWellCard(pending.card))
+        events += advanceTurn()
+        return events
     }
 
     /// A player leaves the match. Unlike every other elimination this can happen
