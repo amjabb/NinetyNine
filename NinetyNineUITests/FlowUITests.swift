@@ -188,11 +188,13 @@ final class FlowUITests: XCTestCase {
         )
         ShotCollector.capture(app, name: "43-next-deal")
 
+        // Match the whole label, not a prefix: the hand-size stepper sits on the
+        // same screen and a prefix match once grabbed it instead.
         let deal = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Deal", "Continue")
+            NSPredicate(format: "label MATCHES %@ OR label == %@", "Deal [0-9]+", "Continue")
         ).firstMatch
-        XCTAssertTrue(deal.exists, "The dealer prompt should offer to deal")
-        deal.tap()
+        XCTAssertTrue(deal.waitForExistence(timeout: 5), "The dealer prompt should offer to deal")
+        tapSteadily(deal)
         XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10), "Rematch should deal again")
         ShotCollector.capture(app, name: "41-rematch")
 
@@ -303,9 +305,7 @@ final class FlowUITests: XCTestCase {
         let card = app.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
         ).firstMatch
-        guard card.exists, card.isHittable else { return false }
-        card.tap()
-        return true
+        return tapSteadily(card)
     }
 
     // MARK: - Helpers
@@ -356,10 +356,7 @@ final class FlowUITests: XCTestCase {
     private func tapFirstExisting(_ labels: [String]) -> Bool? {
         for label in labels {
             let element = app.buttons[label]
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
+            if tapSteadily(element) { return true }
         }
         return nil
     }
@@ -370,13 +367,29 @@ final class FlowUITests: XCTestCase {
             let element = app.buttons
                 .matching(NSPredicate(format: "label BEGINSWITH %@", prefix))
                 .firstMatch
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
+            if tapSteadily(element) { return true }
         }
         return nil
     }
+
+    /// Tap an element by absolute coordinate rather than by re-resolving it.
+    ///
+    /// `element.tap()` re-queries at tap time, so a button that was present a
+    /// millisecond ago but is mid-animation raises "No matches found" and fails
+    /// the test. Banners in this app dismiss on timers, which re-renders the
+    /// action bar underneath. Capturing the frame first and tapping the app at
+    /// that point sidesteps the re-resolve entirely.
+    @discardableResult
+    private func tapSteadily(_ element: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let frame = element.frame
+        guard frame.width > 0, frame.height > 0 else { return false }
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+        return true
+    }
+
 
     /// Every hand card carries the identifier `hand-card-<id>` and a value of
     /// "Playable" / "Not playable". Tap the first playable one.

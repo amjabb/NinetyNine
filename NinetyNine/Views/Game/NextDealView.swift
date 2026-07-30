@@ -162,7 +162,11 @@ struct NextDealView: View {
                 .opacity(enabled ? 1 : 0.35)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(icon == "plus" ? "Deal one more card" : "Deal one fewer card")
+        // Deliberately not "Deal one more card": the primary button on this
+        // screen is "Deal 7", and two controls whose labels begin the same way
+        // are ambiguous to anyone navigating by label — VoiceOver users and
+        // automation alike.
+        .accessibilityLabel(icon == "plus" ? "One more card" : "One fewer card")
     }
 
     // MARK: AI dealer

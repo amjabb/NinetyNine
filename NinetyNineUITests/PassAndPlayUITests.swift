@@ -178,9 +178,7 @@ final class PassAndPlayUITests: XCTestCase {
         let card = app.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
         ).firstMatch
-        guard card.exists, card.isHittable else { return false }
-        card.tap()
-        return true
+        return tapSteadily(card)
     }
 
     private func handoffButton(for name: String) -> XCUIElement {
@@ -248,13 +246,29 @@ final class PassAndPlayUITests: XCTestCase {
         for prefix in prefixes {
             let element = app.buttons
                 .matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
+            if tapSteadily(element) { return true }
         }
         return false
     }
+
+    /// Tap an element by absolute coordinate rather than by re-resolving it.
+    ///
+    /// `element.tap()` re-queries at tap time, so a button that was present a
+    /// millisecond ago but is mid-animation raises "No matches found" and fails
+    /// the test. Banners in this app dismiss on timers, which re-renders the
+    /// action bar underneath. Capturing the frame first and tapping the app at
+    /// that point sidesteps the re-resolve entirely.
+    @discardableResult
+    private func tapSteadily(_ element: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let frame = element.frame
+        guard frame.width > 0, frame.height > 0 else { return false }
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+        return true
+    }
+
 
     @discardableResult
     private func resolveDeclarationSheetIfPresent() -> Bool {
