@@ -286,6 +286,28 @@ struct AIPlayer {
         return "plays \(candidate.card.shortName)"
     }
 
+    // MARK: - Dealing
+
+    /// How many cards this opponent deals when it wins the deal.
+    ///
+    /// Now that the sustaining cap is five, the deal size is an *opening*
+    /// position rather than a standing allowance — a big deal is a temporary
+    /// cushion that decays. So the tiers use it in character: ruthless deals
+    /// tight to strangle the opening, casual deals generously because it's more
+    /// fun that way.
+    func preferredHandSize(maxHandSize: Int) -> Int {
+        let low = Rules.minHandSize
+        let high = max(low, maxHandSize)
+        switch difficulty {
+        case .casual:
+            return min(high, low + 3)
+        case .sharp:
+            return min(high, low + 1)
+        case .ruthless:
+            return low
+        }
+    }
+
     // MARK: - Pacing
 
     /// How long the opponent appears to "think". Deliberate pacing sells the

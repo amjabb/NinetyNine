@@ -70,7 +70,7 @@ final class GameEngine {
         var deck = random.shuffled(Deck.standard())
 
         var players = seats.map {
-            PlayerState(id: $0.id, name: $0.name, kind: $0.kind, handCap: handSize)
+            PlayerState(id: $0.id, name: $0.name, kind: $0.kind, handCap: Rules.sustainingHandCap)
         }
 
         // Deal clockwise from the dealer's left, one card at a time.
@@ -120,6 +120,15 @@ final class GameEngine {
     }
 
     private func note(_ line: String) { state.journal.append(line) }
+
+    #if DEBUG
+    /// Test seam for board positions that are impractical to reach by play — a
+    /// player holding exactly three poisoned queens, say. Deliberately DEBUG-only
+    /// and deliberately ugly to call, so it can't drift into production code.
+    func _replaceStateForTesting(_ newState: GameState) {
+        state = newState
+    }
+    #endif
 
     // MARK: - Playing a card from hand
 
@@ -258,12 +267,15 @@ final class GameEngine {
             events.append(.queensBecamePoisonous(trigger: owner.id))
             note("Queens turn poisonous — \(owner.name) drew one.")
 
-            for index in state.players.indices where index != seat && !state.players[index].isEliminated {
+            // Everyone's held queens are exiled, the triggering player included — an
+            // earlier version skipped their own hand, so the player who caused the
+            // poisoning was the one person it didn't touch.
+            for index in state.players.indices where !state.players[index].isEliminated {
                 let held = state.players[index].hand.filter { $0.rank == .queen }
                 for card in held {
                     state.players[index].hand.removeAll { $0.id == card.id }
                     state.players[index].poisonPile.append(card)
-                    state.players[index].handCap = max(3, state.players[index].handCap - 1)
+                    state.players[index].handCap = max(Rules.poisonedHandCapFloor, state.players[index].handCap - 1)
                     events.append(.queenPoisoned(
                         card: card,
                         owner: state.players[index].id,
@@ -276,7 +288,7 @@ final class GameEngine {
 
         // The drawn queen itself never reaches a hand.
         state.players[seat].poisonPile.append(queen)
-        state.players[seat].handCap = max(3, state.players[seat].handCap - 1)
+        state.players[seat].handCap = max(Rules.poisonedHandCapFloor, state.players[seat].handCap - 1)
         events.append(.queenPoisoned(card: queen, owner: owner.id, newHandCap: state.players[seat].handCap))
         note("\(owner.name) draws \(queen.shortName) straight into the poison pile (cap \(state.players[seat].handCap)).")
         return events
@@ -329,8 +341,14 @@ final class GameEngine {
     /// Turn one of the player's two well cards face up, chosen at random.
     /// A playable card must then be resolved with `resolveWell`; an unplayable
     /// one eliminates its owner on the spot.
+    /// - Parameter slot: which of the two face-down well cards to turn over.
+    ///   The player chooses; both are face down, so the choice is blind — but it
+    ///   is *theirs*. Having the engine pick made the single most tense moment in
+    ///   the game something that happened *to* the player rather than something
+    ///   they did. Out-of-range values are clamped rather than rejected, since a
+    ///   spent well leaves only one slot.
     @discardableResult
-    func drawFromWell(by playerID: String) throws -> [GameEvent] {
+    func drawFromWell(by playerID: String, slot: Int = 0) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
@@ -339,7 +357,7 @@ final class GameEngine {
             throw GameError.mustPlayFromHandFirst
         }
 
-        let pick = random.int(below: state.players[seat].well.count)
+        let pick = min(max(slot, 0), state.players[seat].well.count - 1)
         let card = state.players[seat].well.remove(at: pick)
         let playable = Rules.isPlayable(card, in: state)
 

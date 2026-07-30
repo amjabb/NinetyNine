@@ -21,10 +21,23 @@ struct RootView: View {
     @State private var activeGame: GameViewModel?
     @State private var setupFailure: String?
     @State private var mode: SetupView.GameMode = .solo
+    /// Set when a game ends, carrying who deals next and what they've chosen.
+    @State private var nextDeal: NextDealPlan?
+
+    /// Who deals the next game, and what they picked.
+    private struct NextDealPlan: Equatable {
+        var dealerID: String
+        var dealerName: String
+        var isDealerHuman: Bool
+        var playerCount: Int
+        var handSize: Int
+    }
 
     private enum Route: Equatable {
         case home
         case setup
+        /// Between games: the first player out chooses the next deal size.
+        case nextDeal
         case game
         case rules
         case record
@@ -73,6 +86,22 @@ struct RootView: View {
             )
             .id("setup")
 
+        case .nextDeal:
+            if let plan = nextDeal {
+                NextDealView(
+                    dealerName: plan.dealerName,
+                    isDealerHuman: plan.isDealerHuman,
+                    playerCount: plan.playerCount,
+                    handSize: Binding(
+                        get: { nextDeal?.handSize ?? plan.handSize },
+                        set: { nextDeal?.handSize = $0 }
+                    ),
+                    onDeal: { startGame(dealerID: plan.dealerID, handSize: nextDeal?.handSize) },
+                    onCancel: { go(.home) }
+                )
+                .id("nextdeal")
+            }
+
         case .game:
             gameScreen
                 .id("game-\(gameSeed)")
@@ -97,7 +126,7 @@ struct RootView: View {
             GameTableView(
                 viewModel: viewModel,
                 onExit: { go(.home) },
-                onRematch: { startGame() }
+                onRematch: { planNextDeal(after: viewModel) }
             )
         } else {
             // Should be unreachable: startGame validates before routing here.
@@ -119,14 +148,42 @@ struct RootView: View {
         }
     }
 
-    private func startGame() {
+    /// A game just ended: work out who deals next and what they'd choose, then
+    /// show them the prompt instead of silently re-dealing the previous setup.
+    private func planNextDeal(after viewModel: GameViewModel) {
+        let playerCount = viewModel.participants.count
+        let maxHand = Rules.maxHandSize(forPlayerCount: playerCount)
+
+        guard let dealer = viewModel.nextDealer else {
+            startGame()
+            return
+        }
+        let isHuman = dealer.kind.isLocalHuman
+        let chosen: Int
+        if let difficulty = dealer.kind.difficulty {
+            chosen = AIPlayer(difficulty: difficulty).preferredHandSize(maxHandSize: maxHand)
+        } else {
+            chosen = min(max(Settings.shared.handSize, Rules.minHandSize), maxHand)
+        }
+
+        nextDeal = NextDealPlan(
+            dealerID: dealer.id,
+            dealerName: isHuman ? dealer.name : dealer.name,
+            isDealerHuman: isHuman,
+            playerCount: playerCount,
+            handSize: chosen
+        )
+        go(.nextDeal)
+    }
+
+    private func startGame(dealerID: String? = nil, handSize overrideHandSize: Int? = nil) {
         let settings = Settings.shared
 
         // Validate the deal *before* routing, so a bad configuration surfaces as
         // an explanation on the setup screen instead of a broken table.
         let playerCount = mode == .solo ? settings.opponentCount + 1 : settings.localPlayerCount
         let handSize = min(
-            max(settings.handSize, Rules.minHandSize),
+            max(overrideHandSize ?? settings.handSize, Rules.minHandSize),
             Rules.maxHandSize(forPlayerCount: playerCount)
         )
         guard GameViewModel.canDeal(playerCount: playerCount, handSize: handSize) else {
@@ -140,14 +197,18 @@ struct RootView: View {
                 difficulty: settings.difficulty,
                 opponentCount: settings.opponentCount,
                 handSize: handSize,
-                playerName: settings.playerName
+                playerName: settings.playerName,
+                dealerID: dealerID
             )
         case .passAndPlay:
             activeGame = .passAndPlay(
                 playerNames: settings.resolvedLocalPlayerNames,
-                handSize: handSize
+                handSize: handSize,
+                dealerID: dealerID
             )
         }
+        // Remember the dealer's choice so the next setup screen opens on it.
+        settings.handSize = handSize
         gameSeed += 1
         go(.game)
     }

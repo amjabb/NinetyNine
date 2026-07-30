@@ -361,7 +361,9 @@ final class EngineTests: XCTestCase {
             XCTAssertEqual(player.hand.count, 7)
             XCTAssertEqual(player.well.count, 2)
             XCTAssertTrue(player.poisonPile.isEmpty)
-            XCTAssertEqual(player.handCap, 7)
+            // The cap is the *sustaining* size, not the deal size — dealt seven,
+            // you play down to five and hold there.
+            XCTAssertEqual(player.handCap, Rules.sustainingHandCap)
         }
         XCTAssertEqual(state.drawPile.count, 52 - 4 * 9)
         XCTAssertEqual(state.tally, 0)

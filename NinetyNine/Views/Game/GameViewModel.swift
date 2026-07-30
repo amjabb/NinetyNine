@@ -86,6 +86,10 @@ final class GameViewModel: ObservableObject {
 
     enum WellRevealPhase: Equatable {
         case idle
+        /// The player is being asked which of their face-down well cards to turn
+        /// over. Only shown for a human on this device — the AI has nothing to
+        /// choose on.
+        case choosing(playerID: String, slots: Int)
         case rolling(playerID: String)
         case revealed(card: Card, playable: Bool, playerID: String)
     }
@@ -111,6 +115,7 @@ final class GameViewModel: ObservableObject {
         opponentCount: Int,
         handSize: Int,
         playerName: String,
+        dealerID: String? = nil,
         seed: UInt32? = nil
     ) -> GameViewModel {
         var participants = [MatchParticipant(id: "human", name: playerName, kind: .localHuman)]
@@ -125,6 +130,7 @@ final class GameViewModel: ObservableObject {
             mode: .solo,
             difficulty: difficulty,
             handSize: handSize,
+            dealerID: dealerID,
             seed: seed,
             recordedPlayerID: "human"
         )
@@ -134,6 +140,7 @@ final class GameViewModel: ObservableObject {
     static func passAndPlay(
         playerNames: [String],
         handSize: Int,
+        dealerID: String? = nil,
         seed: UInt32? = nil
     ) -> GameViewModel {
         let participants = playerNames.enumerated().map { index, name in
@@ -148,6 +155,7 @@ final class GameViewModel: ObservableObject {
             mode: .passAndPlay,
             difficulty: .sharp,
             handSize: handSize,
+            dealerID: dealerID,
             seed: seed,
             recordedPlayerID: nil
         )
@@ -158,6 +166,7 @@ final class GameViewModel: ObservableObject {
         mode: MatchCoordinator.MatchMode,
         difficulty: Difficulty,
         handSize: Int,
+        dealerID: String?,
         seed: UInt32?,
         recordedPlayerID: String?,
         records: Records = .shared,
@@ -169,9 +178,20 @@ final class GameViewModel: ObservableObject {
         self.settings = settings
         self.recordedPlayerID = recordedPlayerID
 
+        // The dealer sits last so play opens on the seat after them, per the
+        // rulebook. Rotating the seating rather than passing an index keeps the
+        // transport's participant order and the engine's seating identical.
+        let seated: [MatchParticipant]
+        if let dealerID, let dealerIndex = participants.firstIndex(where: { $0.id == dealerID }) {
+            let after = dealerIndex + 1
+            seated = Array(participants[after...] + participants[..<after])
+        } else {
+            seated = participants
+        }
+
         let transport = LoopbackTransport(
-            localPlayerID: participants[0].id,
-            participants: participants,
+            localPlayerID: seated.first { $0.kind.isLocalHuman }?.id ?? seated[0].id,
+            participants: seated,
             seed: seed ?? UInt32.random(in: 0...UInt32.max),
             handSize: handSize
         )
@@ -343,9 +363,25 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// Opens the well. The player picks a card before anything is revealed.
     func useWell() {
-        guard isYourTurn, options.canUseWell, let actor = viewingPlayerID else { return }
-        Task { await runWell(for: actor) }
+        guard isYourTurn, options.canUseWell, let actor = viewingPlayerID,
+              let remaining = view?.yourWellCount, remaining > 0 else { return }
+        Haptics.shared.play(.cardLift)
+        withAnimation(Motion.drama) {
+            wellReveal = .choosing(playerID: actor, slots: remaining)
+        }
+    }
+
+    /// The player chose which face-down card to turn over.
+    func chooseWellCard(slot: Int) {
+        guard case .choosing(let actor, _) = wellReveal else { return }
+        Task { await runWell(for: actor, slot: slot) }
+    }
+
+    func cancelWellChoice() {
+        Haptics.shared.play(.select)
+        withAnimation(Motion.drama) { wellReveal = .idle }
     }
 
     func skipTurn() {
@@ -436,14 +472,14 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - The well
 
-    private func runWell(for playerID: String) async {
+    private func runWell(for playerID: String, slot: Int) async {
         withAnimation(Motion.drama) { wellReveal = .rolling(playerID: playerID) }
         Haptics.shared.play(.wellReveal)
         SoundEngine.shared.play(.wellRoll)
         try? await Task.sleep(for: .milliseconds(950))
 
         let before = coordinator.actionLog.count
-        await coordinator.submit(.drawFromWell, by: playerID)
+        await coordinator.submit(.drawFromWell(slot: slot), by: playerID)
         guard coordinator.actionLog.count > before else {
             coordinator.lastError = nil
             withAnimation(Motion.drama) { wellReveal = .idle }
@@ -727,6 +763,14 @@ final class GameViewModel: ObservableObject {
     var winnerName: String? {
         guard let id = coordinator.winnerID else { return nil }
         return participants.first { $0.id == id }?.name
+    }
+
+    /// Who deals the next game — the first player knocked out, per the rulebook.
+    /// Falls back to the winner if nobody was eliminated (can't happen in a
+    /// finished game, but the UI shouldn't depend on that).
+    var nextDealer: MatchParticipant? {
+        let id = coordinator.nextDealerID ?? coordinator.winnerID
+        return participants.first { $0.id == id }
     }
 
     // MARK: - Helpers
