@@ -506,6 +506,25 @@ final class GameEngine {
         )
     }
 
+    /// A player leaves the match. Unlike every other elimination this can happen
+    /// off-turn, so the turn is only advanced when the leaver was the one holding
+    /// it — advancing unconditionally would skip whoever is actually to play.
+    @discardableResult
+    func forfeit(by playerID: String) throws -> [GameEvent] {
+        guard !state.isOver else { throw GameError.gameOver }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+        guard !state.players[seat].isEliminated else { return [] }
+
+        let wasCurrent = state.currentPlayerIndex == seat
+        var events = eliminate(seat: seat, reason: .forfeited)
+        // A forfeit mid-reveal must not leave a dangling well card.
+        if state.pendingWell?.playerID == playerID { state.pendingWell = nil }
+        if wasCurrent && !state.isOver {
+            events += advanceTurn()
+        }
+        return events
+    }
+
     /// Force the elimination of a player who is repaying a debt with no play and
     /// no well. The UI calls this when `TurnOptions.isStranded`.
     @discardableResult

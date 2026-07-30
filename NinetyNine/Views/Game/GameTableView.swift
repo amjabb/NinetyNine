@@ -28,8 +28,8 @@ struct GameTableView: View {
     var body: some View {
         ZStack {
             TableBackground(
-                lockedSuit: viewModel.state.suitLock?.suit,
-                pressure: viewModel.state.pressure
+                lockedSuit: viewModel.view?.suitLock?.suit,
+                pressure: viewModel.view?.pressure ?? 0
             )
 
             // The gauge and the fan scale with the height available, so a tall
@@ -88,13 +88,13 @@ struct GameTableView: View {
             // Deck and discard counts — needed to judge whether a reshuffle is
             // coming, which changes how safe hoarding is.
             HStack(spacing: 14) {
-                pileCounter(icon: "rectangle.stack.fill", value: viewModel.state.drawPile.count, label: "Deck")
-                pileCounter(icon: "square.3.layers.3d.down.right", value: viewModel.state.discardPile.count, label: "Pile")
+                pileCounter(icon: "rectangle.stack.fill", value: viewModel.view?.drawPileCount ?? 0, label: "Deck")
+                pileCounter(icon: "square.3.layers.3d.down.right", value: viewModel.view?.discardPile.count ?? 0, label: "Pile")
             }
 
             Spacer()
 
-            DirectionBadge(isClockwise: viewModel.state.direction == 1)
+            DirectionBadge(isClockwise: (viewModel.view?.direction ?? 1) == 1)
         }
         .padding(.top, 2)
         .frame(height: 44)
@@ -122,7 +122,7 @@ struct GameTableView: View {
             ForEach(viewModel.opponents) { opponent in
                 OpponentSeatView(
                     player: opponent,
-                    isCurrent: viewModel.state.currentPlayer.id == opponent.id,
+                    isCurrent: viewModel.view?.currentPlayerID == opponent.id,
                     isThinking: viewModel.thinkingPlayerID == opponent.id,
                     isCompact: viewModel.opponents.count > 3
                 )
@@ -137,17 +137,17 @@ struct GameTableView: View {
     private func centrePiece(gaugeHeight: CGFloat) -> some View {
         ZStack {
             TallyGauge(
-                tally: viewModel.state.tally,
-                suitLock: viewModel.state.suitLock?.suit,
-                isForcedNegative: viewModel.state.forcedNegativeNext,
-                isClockwise: viewModel.state.direction == 1,
+                tally: viewModel.view?.tally ?? 0,
+                suitLock: viewModel.view?.suitLock?.suit,
+                isForcedNegative: viewModel.view?.forcedNegativeNext ?? false,
+                isClockwise: (viewModel.view?.direction ?? 1) == 1,
                 isSlamming: viewModel.isSlamming
             )
             .frame(height: gaugeHeight)
 
             // The active discard sits to the side of the gauge, angled, so the
             // last card played is always visible without covering the number.
-            if let top = viewModel.state.topOfDiscard {
+            if let top = viewModel.view?.topOfDiscard {
                 CardFaceView(card: top)
                     .frame(width: gaugeHeight * 0.25)
                     .rotationEffect(.degrees(-7))
@@ -181,12 +181,12 @@ struct GameTableView: View {
     @ViewBuilder
     private var actionBar: some View {
         let options = viewModel.options
-        let showsStuck = viewModel.isHumanTurn && !options.canPlayFromHand
+        let showsStuck = viewModel.isYourTurn && !options.canPlayFromHand
         let snackooRanks = viewModel.snackooRanks
 
         VStack(spacing: 8) {
-            if viewModel.isHumanTurn && viewModel.state.playsRemainingThisTurn > 1 {
-                DebtBanner(playsOwed: viewModel.state.playsRemainingThisTurn)
+            if viewModel.isYourTurn, let owed = viewModel.view?.playsRemainingThisTurn, owed > 1 {
+                DebtBanner(playsOwed: owed)
             }
 
             HStack(spacing: 8) {
@@ -216,7 +216,7 @@ struct GameTableView: View {
                 if showsStuck && options.canUseWell {
                     ActionButton(
                         title: "The Well",
-                        subtitle: "\(viewModel.human.well.count) left · risky",
+                        subtitle: "\(viewModel.view?.yourWellCount ?? 0) left · risky",
                         tint: Palette.danger,
                         icon: "arrow.down.circle.fill"
                     ) {
@@ -247,8 +247,8 @@ struct GameTableView: View {
                 }
             }
         }
-        .animation(Motion.panel, value: viewModel.isHumanTurn)
-        .animation(Motion.panel, value: viewModel.state.playsRemainingThisTurn)
+        .animation(Motion.panel, value: viewModel.isYourTurn)
+        .animation(Motion.panel, value: viewModel.view?.playsRemainingThisTurn)
         .padding(.bottom, 6)
     }
 
@@ -260,11 +260,11 @@ struct GameTableView: View {
         VStack(spacing: 5) {
             turnIndicator
             HStack(spacing: 12) {
-                WellPips(remaining: viewModel.human.well.count)
-                if !viewModel.human.poisonPile.isEmpty {
-                    PoisonBadge(count: viewModel.human.poisonPile.count)
+                WellPips(remaining: viewModel.view?.yourWellCount ?? 0)
+                if let poison = viewModel.view?.yourPoisonPile, !poison.isEmpty {
+                    PoisonBadge(count: poison.count)
                 }
-                Text("cap \(viewModel.human.handCap)")
+                Text("cap \(viewModel.view?.yourHandCap ?? 0)")
                     .labelStyle()
             }
         }
@@ -276,11 +276,11 @@ struct GameTableView: View {
     private func handArea(fanHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             HandFanView(
-                cards: viewModel.human.hand,
+                cards: viewModel.yourHand,
                 playableIDs: viewModel.playableCardIDs,
                 suppressedCardID: viewModel.pendingChoice.map { $0.card.id },
                 rejectedCardID: viewModel.rejection?.cardID,
-                isInteractive: viewModel.isHumanTurn && !viewModel.isDealing,
+                isInteractive: viewModel.isYourTurn && !viewModel.isDealing,
                 isDealing: viewModel.isDealing
             ) { card in
                 viewModel.tapCard(card)
@@ -292,22 +292,22 @@ struct GameTableView: View {
 
     private var turnIndicator: some View {
         Group {
-            if viewModel.state.isOver {
+            if viewModel.view?.isOver ?? false {
                 EmptyView()
-            } else if viewModel.isHumanTurn {
+            } else if viewModel.isYourTurn {
                 Text(viewModel.options.canPlayFromHand ? "Your move" : "No legal card")
                     .font(Typography.sectionTitle)
                     .foregroundStyle(viewModel.options.canPlayFromHand ? Palette.brassLight : Palette.danger)
                     .transition(.opacity)
             } else {
-                Text("\(viewModel.state.currentPlayer.name) is thinking…")
+                Text("\(currentPlayerName) is thinking…")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.ivoryDim)
                     .transition(.opacity)
             }
         }
         .frame(height: 24)
-        .animation(Motion.panel, value: viewModel.isHumanTurn)
+        .animation(Motion.panel, value: viewModel.isYourTurn)
     }
 
     // MARK: - Overlays
@@ -356,7 +356,7 @@ struct GameTableView: View {
         if let choice = viewModel.pendingChoice {
             DeclarationSheet(
                 choice: choice,
-                currentTally: viewModel.state.tally,
+                currentTally: viewModel.view?.tally ?? 0,
                 projected: { viewModel.projectedTally(for: choice.card, declaration: $0) },
                 onChoose: { viewModel.chooseDeclaration($0) },
                 onCancel: { viewModel.cancelChoice() }
@@ -366,8 +366,10 @@ struct GameTableView: View {
         if let outcome = viewModel.outcome {
             GameOverView(
                 outcome: outcome,
-                state: viewModel.state,
-                humanID: viewModel.humanID,
+                standings: viewModel.finishingOrder,
+                subjectID: viewModel.viewingPlayerID,
+                winnerName: viewModel.winnerName,
+                isSharedDevice: viewModel.mode == .passAndPlay,
                 onRematch: onRematch,
                 onExit: onExit
             )
@@ -379,12 +381,29 @@ struct GameTableView: View {
                 onQuit: onExit
             )
         }
+
+        // Last in the stack, so it covers everything. In pass-and-play the table
+        // underneath is still showing the previous player's hand until they
+        // hand over — this must sit on top of all of it.
+        if viewModel.awaitingHandoff, let name = viewModel.handoffTargetName {
+            HandoffView(
+                nextPlayerName: name,
+                seatNumber: viewModel.handoffSeatNumber,
+                totalSeats: viewModel.participants.count,
+                onReady: { viewModel.acknowledgeHandoff() }
+            )
+        }
+    }
+
+    private var currentPlayerName: String {
+        guard let id = viewModel.view?.currentPlayerID else { return "" }
+        return viewModel.participants.first { $0.id == id }?.name ?? ""
     }
 
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
         case .rolling(let id), .revealed(_, _, let id):
-            return viewModel.state.player(id: id)?.name ?? ""
+            return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
             return ""
         }
@@ -393,7 +412,7 @@ struct GameTableView: View {
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
         case .rolling(let id), .revealed(_, _, let id):
-            return id == viewModel.humanID
+            return id == viewModel.viewingPlayerID
         case .idle:
             return false
         }

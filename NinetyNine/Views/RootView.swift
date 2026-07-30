@@ -20,6 +20,7 @@ struct RootView: View {
     /// builder would deal a brand-new game on every body evaluation.
     @State private var activeGame: GameViewModel?
     @State private var setupFailure: String?
+    @State private var mode: SetupView.GameMode = .solo
 
     private enum Route: Equatable {
         case home
@@ -33,12 +34,7 @@ struct RootView: View {
         var isForward: Bool { self != .home }
     }
 
-    struct GameConfiguration: Equatable {
-        var difficulty: Difficulty
-        var opponentCount: Int
-        var handSize: Int
-        var playerName: String
-    }
+
 
     var body: some View {
         ZStack {
@@ -71,6 +67,7 @@ struct RootView: View {
 
         case .setup:
             SetupView(
+                mode: $mode,
                 onStart: { startGame() },
                 onBack: { go(.home) }
             )
@@ -124,30 +121,35 @@ struct RootView: View {
 
     private func startGame() {
         let settings = Settings.shared
-        let configuration = GameConfiguration(
-            difficulty: settings.difficulty,
-            opponentCount: settings.opponentCount,
-            handSize: settings.validHandSize(),
-            playerName: settings.playerName
+
+        // Validate the deal *before* routing, so a bad configuration surfaces as
+        // an explanation on the setup screen instead of a broken table.
+        let playerCount = mode == .solo ? settings.opponentCount + 1 : settings.localPlayerCount
+        let handSize = min(
+            max(settings.handSize, Rules.minHandSize),
+            Rules.maxHandSize(forPlayerCount: playerCount)
         )
-        // Build the deal *before* routing, so a bad configuration surfaces as an
-        // explanation on the setup screen instead of a broken table.
-        guard let viewModel = makeViewModel(configuration) else {
+        guard GameViewModel.canDeal(playerCount: playerCount, handSize: handSize) else {
             setupFailure = "That table needs more cards than a 52-card deck has. Try fewer players or a smaller hand."
             return
         }
-        activeGame = viewModel
+
+        switch mode {
+        case .solo:
+            activeGame = .solo(
+                difficulty: settings.difficulty,
+                opponentCount: settings.opponentCount,
+                handSize: handSize,
+                playerName: settings.playerName
+            )
+        case .passAndPlay:
+            activeGame = .passAndPlay(
+                playerNames: settings.resolvedLocalPlayerNames,
+                handSize: handSize
+            )
+        }
         gameSeed += 1
         go(.game)
-    }
-
-    private func makeViewModel(_ configuration: GameConfiguration) -> GameViewModel? {
-        try? GameViewModel(
-            difficulty: configuration.difficulty,
-            opponentCount: configuration.opponentCount,
-            handSize: configuration.handSize,
-            playerName: configuration.playerName
-        )
     }
 
     // MARK: - Transitions

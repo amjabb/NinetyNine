@@ -18,6 +18,8 @@ struct NinetyNineApp: App {
             Settings.shared.difficulty = .sharp
             Settings.shared.handSize = 6
             Settings.shared.coachingEnabled = true
+            Settings.shared.localPlayerCount = 3
+            Settings.shared.localPlayerNames = []
         }
         // Store screenshots should show a played-in record rather than a row of
         // zeroes, so the capture run seeds a plausible history.

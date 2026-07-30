@@ -10,7 +10,10 @@
 import SwiftUI
 
 struct OpponentSeatView: View {
-    let player: PlayerState
+    /// Deliberately the *redacted* view, not a PlayerState. This seat renders
+    /// what you can see across a table — counts, never cards — and taking the
+    /// full state would make leaking an opponent's hand a one-line mistake.
+    let player: OpponentView
     var isCurrent: Bool
     var isThinking: Bool
     /// Compact form for tables with four or more opponents.
@@ -42,7 +45,7 @@ struct OpponentSeatView: View {
         ZStack {
             // Fanned card backs behind the avatar, count-accurate up to five —
             // an instant read on how loaded they are.
-            ForEach(0..<min(player.hand.count, 5), id: \.self) { index in
+            ForEach(0..<min(player.handCount, 5), id: \.self) { index in
                 CardBackView()
                     .frame(width: ringSize * 0.46)
                     .rotationEffect(.degrees(Double(index - 2) * 9))
@@ -106,7 +109,7 @@ struct OpponentSeatView: View {
                 .foregroundStyle(isCurrent ? Palette.brassLight : Palette.ivory.opacity(0.85))
                 .lineLimit(1)
             if !player.isEliminated {
-                Text("\(player.hand.count)")
+                Text("\(player.handCount)")
                     .font(Typography.counter(isCompact ? 10 : 11, weight: .bold))
                     .foregroundStyle(Palette.ivoryDim)
                     .padding(.horizontal, 4)
@@ -125,7 +128,7 @@ struct OpponentSeatView: View {
             HStack(spacing: 2) {
                 ForEach(0..<2, id: \.self) { index in
                     Circle()
-                        .fill(index < player.well.count ? Palette.brassMid : Palette.ivoryFaint.opacity(0.3))
+                        .fill(index < player.wellCount ? Palette.brassMid : Palette.ivoryFaint.opacity(0.3))
                         .frame(width: 5, height: 5)
                         .overlay(
                             Circle().strokeBorder(Palette.brassDeep.opacity(0.6), lineWidth: 0.5)
@@ -133,11 +136,11 @@ struct OpponentSeatView: View {
                 }
             }
 
-            if !player.poisonPile.isEmpty {
+            if player.poisonCount > 0 {
                 HStack(spacing: 1) {
                     Image(systemName: "drop.fill")
                         .font(.system(size: 7, weight: .bold))
-                    Text("\(player.poisonPile.count)")
+                    Text("\(player.poisonCount)")
                         .font(Typography.counter(9, weight: .bold))
                 }
                 .foregroundStyle(Palette.poison)
@@ -154,9 +157,9 @@ struct OpponentSeatView: View {
 
     private var accessibilityDescription: String {
         if player.isEliminated { return "\(player.name), eliminated" }
-        var parts = ["\(player.name), \(player.hand.count) cards"]
-        parts.append("\(player.well.count) well \(player.well.count == 1 ? "card" : "cards") left")
-        if !player.poisonPile.isEmpty { parts.append("\(player.poisonPile.count) poisoned queens") }
+        var parts = ["\(player.name), \(player.handCount) cards"]
+        parts.append("\(player.wellCount) well \(player.wellCount == 1 ? "card" : "cards") left")
+        if player.poisonCount > 0 { parts.append("\(player.poisonCount) poisoned queens") }
         if player.owesExtraPlay { parts.append("owes two plays") }
         if isCurrent { parts.append("their turn") }
         return parts.joined(separator: ", ")
