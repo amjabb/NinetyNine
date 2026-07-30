@@ -72,12 +72,14 @@ struct SettingsView: View {
                     Spacer(minLength: 100)
                 }
                 .padding(22)
+                .tableContentWidth()
             }
 
             VStack {
                 Spacer()
                 BrassButton(title: "Back", isProminent: false, action: onBack)
                     .padding(22)
+                    .tableContentWidth()
                     .background(
                         LinearGradient(
                             colors: [.clear, Palette.feltShadow.opacity(0.95)],

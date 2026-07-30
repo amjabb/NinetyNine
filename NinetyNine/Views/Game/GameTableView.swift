@@ -32,17 +32,31 @@ struct GameTableView: View {
                 pressure: viewModel.state.pressure
             )
 
-            VStack(spacing: 0) {
-                topBar
-                opponentRow
-                Spacer(minLength: 8)
-                centrePiece
-                Spacer(minLength: 8)
-                statusRow
-                actionBar
-                handArea
+            // The gauge and the fan scale with the height available, so a tall
+            // screen gets a bigger gauge rather than more empty felt. Clamped at
+            // both ends: the lower bound keeps the gauge readable on a small
+            // phone, the upper bound stops it dominating an iPad.
+            GeometryReader { geometry in
+                let height = geometry.size.height
+                let gaugeHeight = min(max(height * 0.30, 196), 340)
+                let fanHeight = min(max(height * 0.23, 158), 260)
+
+                VStack(spacing: 0) {
+                    topBar
+                    opponentRow
+                    Spacer(minLength: 8)
+                    centrePiece(gaugeHeight: gaugeHeight)
+                    Spacer(minLength: 8)
+                    statusRow
+                    actionBar
+                    handArea(fanHeight: fanHeight)
+                }
+                // Height only — pinning the width here would override the content
+                // measure applied below and leave the top bar spanning an iPad.
+                .frame(height: height)
+                .padding(.horizontal, 14)
+                .tableContentWidth()
             }
-            .padding(.horizontal, 14)
 
             overlays
         }
@@ -120,7 +134,7 @@ struct GameTableView: View {
 
     // MARK: - Centre
 
-    private var centrePiece: some View {
+    private func centrePiece(gaugeHeight: CGFloat) -> some View {
         ZStack {
             TallyGauge(
                 tally: viewModel.state.tally,
@@ -129,16 +143,16 @@ struct GameTableView: View {
                 isClockwise: viewModel.state.direction == 1,
                 isSlamming: viewModel.isSlamming
             )
-            .frame(height: 248)
+            .frame(height: gaugeHeight)
 
             // The active discard sits to the side of the gauge, angled, so the
             // last card played is always visible without covering the number.
             if let top = viewModel.state.topOfDiscard {
                 CardFaceView(card: top)
-                    .frame(width: 62)
+                    .frame(width: gaugeHeight * 0.25)
                     .rotationEffect(.degrees(-7))
                     .cardShadow(lift: 4)
-                    .offset(x: 128, y: 62)
+                    .offset(x: gaugeHeight * 0.52, y: gaugeHeight * 0.25)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
                     .id(top.id)
                     .accessibilityLabel("Top of the discard pile, \(top.accessibleName)")
@@ -147,7 +161,7 @@ struct GameTableView: View {
             // Floating delta chip.
             if let delta = viewModel.tallyDelta {
                 TallyDeltaChip(delta: delta)
-                    .offset(y: -128)
+                    .offset(y: -gaugeHeight * 0.52)
                     .transition(
                         .asymmetric(
                             insertion: .scale(scale: 0.4).combined(with: .opacity),
@@ -259,7 +273,7 @@ struct GameTableView: View {
 
     // MARK: - Hand
 
-    private var handArea: some View {
+    private func handArea(fanHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             HandFanView(
                 cards: viewModel.human.hand,
@@ -271,7 +285,7 @@ struct GameTableView: View {
             ) { card in
                 viewModel.tapCard(card)
             }
-            .frame(height: 178)
+            .frame(height: fanHeight)
         }
         .padding(.bottom, 2)
     }

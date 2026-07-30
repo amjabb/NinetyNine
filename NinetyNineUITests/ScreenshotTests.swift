@@ -66,16 +66,34 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2.4)
         shot("store-6-table")
 
+        // Capture the declaration sheet on turn one, where the tally is 0 and
+        // every card is legal — so an Ace, an 8, or a Queen in hand is guaranteed
+        // to open it. Waiting for one to turn up mid-game left this shot to luck.
+        var capturedSheet = captureDeclarationSheet()
+        if !capturedSheet, app.buttons["Rematch"].exists == false {
+            // Deal again and try once more; a 6-card hand holds at least one of
+            // those ranks the large majority of the time.
+            app.buttons["Pause"].tap()
+            app.buttons["Quit to menu"].tap()
+            _ = playButton.waitForExistence(timeout: 5)
+            playButton.tap()
+            _ = app.buttons["Deal"].waitForExistence(timeout: 5)
+            app.buttons["Deal"].tap()
+            XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10))
+            Thread.sleep(forTimeInterval: 2.4)
+            capturedSheet = captureDeclarationSheet()
+        }
+
         // Play on and grab the table once the tally is genuinely dangerous — a
         // screenshot of a tally of 4 sells nothing.
         var moves = 0
         var capturedTension = false
-        var capturedSheet = false
-        while moves < 200 {
+        while moves < 400 {
             moves += 1
             if app.buttons["Rematch"].exists { break }
 
-            // A declaration sheet is the most distinctive screen in the game.
+            // Fallback: if turn one didn't hold a suitable card, take the sheet
+            // whenever one does appear later.
             if !capturedSheet, isDeclarationSheetUp {
                 Thread.sleep(forTimeInterval: 0.6)
                 shot("store-7-declaration")
@@ -94,19 +112,26 @@ final class ScreenshotTests: XCTestCase {
                 continue
             }
             if tapFirstExisting(["Snackoo", "The Well", "Skip", "No outs"]) { continue }
+            if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) { continue }
             if tapAPlayableCard() { continue }
             Thread.sleep(forTimeInterval: 0.2)
         }
 
-        if app.buttons["Rematch"].exists {
-            Thread.sleep(forTimeInterval: 1.0)
+        // The move budget can run out while a game is still going — dramatic
+        // beats (well reveals, eliminations) hold the table for a second or two
+        // each. Give the game a chance to finish on its own before giving up on
+        // the outcome shot.
+        var capturedOutcome = false
+        if app.buttons["Rematch"].waitForExistence(timeout: 60) {
+            Thread.sleep(forTimeInterval: 1.2)
             shot("store-9-outcome")
+            capturedOutcome = true
         }
 
         // Report what was and wasn't captured, so a missing shot is visible in the
         // log rather than silently absent.
         XCTContext.runActivity(named: "capture summary") { _ in
-            print("SHOTS captured: sheet=\(capturedSheet) pressure=\(capturedTension)")
+            print("SHOTS captured: sheet=\(capturedSheet) pressure=\(capturedTension) outcome=\(capturedOutcome)")
         }
     }
 
@@ -133,6 +158,24 @@ final class ScreenshotTests: XCTestCase {
         return Int(leading)
     }
 
+    /// Taps an Ace, 8, or Queen to open the declaration sheet, captures it, and
+    /// backs out leaving the card unplayed. Returns false if the hand held none.
+    private func captureDeclarationSheet() -> Bool {
+        guard isPlayersTurn else { return false }
+        guard tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) else { return false }
+        guard app.staticTexts["One, or eleven?"].waitForExistence(timeout: 2)
+                || app.staticTexts["Name the suit"].exists
+                || app.staticTexts["What is she copying?"].exists
+        else { return false }
+
+        Thread.sleep(forTimeInterval: 0.7)
+        shot("store-7-declaration")
+        // Leave the board untouched so the play loop below starts from a clean
+        // position rather than mid-decision.
+        if app.buttons["Back"].exists { app.buttons["Back"].tap() }
+        return true
+    }
+
     private func shot(_ name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -155,17 +198,23 @@ final class ScreenshotTests: XCTestCase {
         return false
     }
 
-    private func tapAPlayableCard() -> Bool {
+    /// Taps a playable card. `preferringRanks` matches against the card's
+    /// accessibility label ("Queen of Hearts"), and returns false rather than
+    /// falling back, so the caller can decide what to do when no preferred card
+    /// is available.
+    private func tapAPlayableCard(preferringRanks ranks: [String] = []) -> Bool {
         let cards = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "hand-card-"))
             .allElementsBoundByIndex
-        for card in cards where card.isHittable {
-            if (card.value as? String) == "Playable" {
-                card.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.62)).tap()
-                return true
-            }
-        }
-        return false
+
+        let playable = cards.filter { $0.isHittable && ($0.value as? String) == "Playable" }
+        let candidates = ranks.isEmpty
+            ? playable
+            : playable.filter { card in ranks.contains { card.label.hasPrefix($0) } }
+
+        guard let card = candidates.first else { return false }
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.62)).tap()
+        return true
     }
 
     @discardableResult

@@ -51,6 +51,7 @@ struct SetupView: View {
                     dealSummary
                 }
                 .padding(24)
+                .tableContentWidth()
             }
 
             VStack {
@@ -60,6 +61,7 @@ struct SetupView: View {
                     BrassButton(title: "Back", isProminent: false, action: onBack)
                 }
                 .padding(24)
+                .tableContentWidth()
                 .background(
                     LinearGradient(
                         colors: [.clear, Palette.feltShadow.opacity(0.95)],

@@ -54,6 +54,7 @@ struct HomeView: View {
                 .padding(.horizontal, 26)
                 .padding(.bottom, 34)
             }
+            .tableContentWidth()
             .opacity(hasAppeared ? 1 : 0)
             .offset(y: hasAppeared ? 0 : motion.displacement(22))
         }
@@ -123,14 +124,17 @@ struct HomeView: View {
 
     private var decorativeFan: some View {
         GeometryReader { geometry in
+            // Sized against the content measure, not the screen, so the cards
+            // don't balloon on an iPad.
+            let stage = min(geometry.size.width, Layout.maxContentWidth)
             ZStack {
                 ForEach(Array(HomeView.showcase.enumerated()), id: \.element.id) { index, card in
                     CardFaceView(card: card)
-                        .frame(width: geometry.size.width * 0.30)
+                        .frame(width: stage * 0.30)
                         .cardShadow(lift: 8)
                         .rotationEffect(.degrees(Double(index - 1) * 15 + (sheen - 0.5) * 1.6))
                         .offset(
-                            x: CGFloat(index - 1) * geometry.size.width * 0.21,
+                            x: CGFloat(index - 1) * stage * 0.21,
                             y: abs(CGFloat(index - 1)) * 14
                         )
                 }

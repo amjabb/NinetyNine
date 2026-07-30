@@ -196,16 +196,20 @@ handled:
 - **Guideline 4.7 / gambling.** There is no wagering, currency, chips, or prize
   of any kind. It's a shedding card game.
 - **Guideline 1.2 — user-generated content.** There is none.
-- **Design 4.0 — iPad.** The app builds for iPad and is portrait-only, which is
-  declared in `Info.plist`. Test on an iPad simulator before submitting if you
-  want to be certain of the layout at that size.
+- **Design 4.0 — iPad.** The app builds for iPad, is portrait-only (declared in
+  `Info.plist`), and a full game has been played through on a 13" iPad Pro via
+  the automated UI test.
 
 ## Things worth deciding before you ship
 
-- **iPad layout** is functional but tuned for phone proportions — the gauge and
-  fan will look small on a 13" iPad. If iPad matters to you, it deserves a pass
-  of its own. Otherwise consider setting `TARGETED_DEVICE_FAMILY` to `1`
-  (iPhone only), which is a legitimate and common choice for a phone game.
+- **iPad** was tested, not assumed: the full-game UI test passes on a 13" iPad
+  Pro, and the layout holds content to a phone-shaped measure (540pt) centred on
+  screen, with the gauge and fan scaling to the height available. It reads as a
+  deliberate composition rather than a stretched phone. It is still, honestly, a
+  phone game shown on a large screen — a genuine iPad design (landscape, a real
+  table with seats around it) would be a worthwhile 1.1. If you'd rather not
+  ship iPad at all, set `TARGETED_DEVICE_FAMILY` to `1`; that's a legitimate and
+  common choice.
 - **Localisation** is English only. `LOCALIZATION_PREFERS_STRING_CATALOGS` is on
   and `SWIFT_EMIT_LOC_STRINGS` is set, so adding languages later is
   straightforward.

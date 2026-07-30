@@ -36,10 +36,15 @@ xcrun xcresulttool export attachments \
   --output-path "$WORK/attachments" > /dev/null
 
 python3 - "$WORK/attachments" "$OUT" <<'PY'
-import json, os, shutil, sys
+import json, os, re, shutil, sys
 
 source, destination = sys.argv[1], sys.argv[2]
 manifest = json.load(open(os.path.join(source, "manifest.json")))
+
+# xcresulttool appends "_<index>_<uuid>" to the name it suggests; strip it back
+# to the plain label the test asked for.
+SUFFIX = re.compile(r"_\d+_[0-9A-Fa-f-]{36}(?=\.png$|$)")
+
 count = 0
 for entry in manifest:
     for attachment in entry.get("attachments", []):
@@ -50,8 +55,9 @@ for entry in manifest:
         path = os.path.join(source, exported)
         if not os.path.exists(path):
             continue
-        # Strip the uuid suffix xcresulttool appends.
-        base = name if name.endswith(".png") else name + ".png"
+        base = SUFFIX.sub("", name)
+        if not base.endswith(".png"):
+            base += ".png"
         shutil.copy(path, os.path.join(destination, base))
         count += 1
 print(f"wrote {count} screenshots")
