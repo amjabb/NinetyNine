@@ -10,7 +10,10 @@ set -euo pipefail
 
 DEVICE="${1:-iPhone 17 Pro}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$ROOT/Artifacts/screenshots"
+# Each device size gets its own folder — App Store Connect has a separate slot
+# per display size, and capturing a second size must not destroy the first.
+SLUG="$(echo "$DEVICE" | tr '[:upper:] ' '[:lower:]-')"
+OUT="$ROOT/Artifacts/screenshots/$SLUG"
 WORK="$ROOT/Artifacts/.screenshot-run"
 STAGING="$WORK/staged"
 
@@ -79,3 +82,5 @@ mv "$STAGING"/* "$OUT"/
 rm -rf "$WORK"
 echo "==> Done: $OUT"
 ls -1 "$OUT"
+echo
+echo "Dimensions: $(sips -g pixelWidth -g pixelHeight "$OUT"/store-1-home.png 2>/dev/null | awk '/pixel/{printf "%s ", $2}')"
