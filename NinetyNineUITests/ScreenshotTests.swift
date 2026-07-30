@@ -203,9 +203,12 @@ final class ScreenshotTests: XCTestCase {
     /// falling back, so the caller can decide what to do when no preferred card
     /// is available.
     private func tapAPlayableCard(preferringRanks ranks: [String] = []) -> Bool {
-        let cards = app.descendants(matching: .any)
+        let query = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@", "hand-card-"))
-            .allElementsBoundByIndex
+        // Resolving allElementsBoundByIndex while the hierarchy is mid-animation
+        // throws rather than returning empty, so wait for the fan to exist first.
+        guard query.firstMatch.waitForExistence(timeout: 4) else { return false }
+        let cards = query.allElementsBoundByIndex
 
         let playable = cards.filter { $0.isHittable && ($0.value as? String) == "Playable" }
         let candidates = ranks.isEmpty
