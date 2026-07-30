@@ -1,0 +1,165 @@
+//
+//  PlayerAction.swift
+//  A move, as data.
+//
+//  Every way a player can affect the game is one of these. They are Codable and
+//  tiny — an action is a *request*, never a fact. A client saying "I play the
+//  nine of hearts" is asking; the authority validates it through the same
+//  `Rules.resolve` a local play goes through and refuses anything illegal.
+//
+//  Crucially, an action carries no hidden information. It names a card by id,
+//  and only ever a card the acting player is allowed to know about. Nothing
+//  here can leak another player's hand.
+//
+
+import Foundation
+
+/// Something a player asks to do.
+enum PlayerAction: Codable, Hashable, Sendable {
+
+    /// Play a card from hand, resolved with the given declaration.
+    case play(cardID: Int, declaration: Declaration)
+
+    /// Reveal one of the player's two well cards. The *result* is decided by the
+    /// authority — the client must not choose which card, or it could learn its
+    /// own well contents early.
+    case drawFromWell
+
+    /// Play the well card that has just been revealed.
+    case resolveWell(declaration: Declaration)
+
+    /// Skip the turn, taking on a two-play debt.
+    case skip
+
+    /// Declare Snackoo. A free action.
+    case snackoo(kind: SnackooKind)
+
+    /// Concede when stranded with no legal play, no well, and a debt owed.
+    case concede
+
+    /// Leave the match. Treated as elimination — see Docs/MULTIPLAYER.md.
+    case forfeit
+
+    /// Mirrors `GameEvent.SnackooKind` but Codable and free of the event type,
+    /// so the wire format doesn't depend on the presentation-facing enum.
+    enum SnackooKind: Codable, Hashable, Sendable {
+        case threeOfAKind(Rank)
+        case threeQueens
+
+        var asEvent: GameEvent.SnackooKind {
+            switch self {
+            case .threeOfAKind(let rank): return .threeOfAKind(rank)
+            case .threeQueens: return .threeQueens
+            }
+        }
+
+        init(_ event: GameEvent.SnackooKind) {
+            switch event {
+            case .threeOfAKind(let rank): self = .threeOfAKind(rank)
+            case .threeQueens: self = .threeQueens
+            }
+        }
+    }
+
+    /// True for actions only legal on the acting player's own turn. Snackoo and
+    /// forfeit are the exceptions.
+    var requiresTurn: Bool {
+        switch self {
+        case .snackoo, .forfeit: return false
+        default: return true
+        }
+    }
+}
+
+/// An action paired with who asked for it. This is the unit that crosses the
+/// wire and the unit that gets logged.
+struct SubmittedAction: Codable, Hashable, Sendable {
+    var playerID: String
+    var action: PlayerAction
+    /// Position in the match's ordered log. Used to detect gaps and to reject
+    /// replays of a stale action.
+    var sequence: Int
+}
+
+// MARK: - Applying actions
+
+extension GameEngine {
+
+    /// The single entry point for a networked or pass-and-play move.
+    ///
+    /// Routes to the existing typed methods rather than reimplementing any of
+    /// them — there must be exactly one rules path, or the multiplayer and solo
+    /// games will drift apart the first time a rule changes.
+    @discardableResult
+    func apply(_ submitted: SubmittedAction) throws -> [GameEvent] {
+        let playerID = submitted.playerID
+
+        if submitted.action.requiresTurn {
+            guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
+        }
+
+        switch submitted.action {
+        case .play(let cardID, let declaration):
+            return try play(cardID: cardID, by: playerID, declaration: declaration)
+
+        case .drawFromWell:
+            return try drawFromWell(by: playerID)
+
+        case .resolveWell(let declaration):
+            return try resolveWell(by: playerID, declaration: declaration)
+
+        case .skip:
+            return try skip(by: playerID)
+
+        case .snackoo(let kind):
+            return try declareSnackoo(by: playerID, kind: kind.asEvent)
+
+        case .concede:
+            return try concedeStranded(by: playerID)
+
+        case .forfeit:
+            return try forfeit(by: playerID)
+        }
+    }
+
+    /// Every legal action available to a player right now. Used by the UI to
+    /// build affordances, and by tests to fuzz only legal moves.
+    func availableActions(for playerID: String) -> [PlayerAction] {
+        guard !state.isOver, let player = state.player(id: playerID), !player.isEliminated else {
+            return []
+        }
+
+        var actions: [PlayerAction] = []
+
+        // Off-turn actions first — these don't depend on whose turn it is.
+        if Rules.canSnackooPoison(player) {
+            actions.append(.snackoo(kind: .threeQueens))
+        }
+        for rank in Rules.snackooRanksInHand(for: player) {
+            actions.append(.snackoo(kind: .threeOfAKind(rank)))
+        }
+
+        guard state.currentPlayer.id == playerID else { return actions }
+
+        // A revealed well card must be resolved before anything else.
+        if let pending = state.pendingWell, pending.playerID == playerID {
+            for declaration in Rules.legalDeclarations(for: pending.card, in: state) {
+                actions.append(.resolveWell(declaration: declaration))
+            }
+            return actions
+        }
+
+        for card in player.hand {
+            for declaration in Rules.legalDeclarations(for: card, in: state) {
+                actions.append(.play(cardID: card.id, declaration: declaration))
+            }
+        }
+
+        let options = currentPlayerOptions
+        if options.canUseWell { actions.append(.drawFromWell) }
+        if options.canSkip { actions.append(.skip) }
+        if options.isStranded { actions.append(.concede) }
+
+        return actions
+    }
+}

@@ -57,6 +57,9 @@ enum GameEvent: Equatable, Sendable {
     enum EliminationReason: Equatable, Sendable {
         case unplayableWellCard(Card)
         case strandedWithoutWell
+        /// Left the match. Only reachable in multiplayer — see Docs/MULTIPLAYER.md
+        /// for why quitting is modelled as elimination rather than as a new state.
+        case forfeited
 
         var explanation: String {
             switch self {
@@ -64,6 +67,8 @@ enum GameEvent: Equatable, Sendable {
                 return "The well gave up the \(card.accessibleName) — unplayable."
             case .strandedWithoutWell:
                 return "No legal play, and the well is dry."
+            case .forfeited:
+                return "Left the match."
             }
         }
     }
