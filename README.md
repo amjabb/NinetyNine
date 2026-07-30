@@ -70,6 +70,33 @@ history.
 - **Nothing leaves the device.** No accounts, no analytics, no network code —
   the binary doesn't even link a networking framework.
 
+## Support
+
+Found a bug, or have a question about the game?
+**[Open an issue](../../issues)** — that's the fastest way to reach me, and it's
+the official support channel for the app.
+
+When reporting a bug it helps enormously to include your device and iOS version,
+what you expected to happen, and what happened instead.
+
+## Privacy
+
+Ninety-Nine collects nothing and transmits nothing. There is no account, no
+analytics, and no networking code — the compiled binary doesn't even link a
+networking framework. Settings and stats live on your device and are deleted
+with the app.
+
+Full policy: [PRIVACY.md](PRIVACY.md).
+
+## Licence
+
+Source-available, **not** open source — see [LICENSE](LICENSE). You're welcome to
+read it, learn from it, and build it locally. You may not redistribute it or
+publish a build of it.
+
+The rules of the card game itself aren't covered by that: game rules aren't
+copyrightable, and you're welcome to implement them yourself.
+
 ## Status
 
 Feature-complete and archive-ready. Submission needs an Apple Developer account —

@@ -20,7 +20,9 @@ few steps are yours. They should take about twenty minutes.
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
 | Store copy | ✅ below, within Apple's character limits |
-| Release archive | ✅ builds clean (`Scripts/archive.sh`) |
+| Release archive | ✅ builds clean from a fresh clone (`Scripts/archive.sh`) |
+| Support URL | ✅ the GitHub repo (see below) |
+| Privacy policy URL | ✅ `PRIVACY.md` in the repo (see below) |
 
 ---
 
@@ -138,10 +140,23 @@ card,cards,99,tally,shedding,solitaire,strategy,offline,family,deck,brain,logic,
 gambling, no simulated gambling (no wagering, no chips, no currency of any
 kind), no violence, and no user-generated content.
 
-### Support / marketing URL
-⚠️ **You must supply these — Apple requires a reachable support URL.** A single
-static page is enough. If you don't have a domain, a public GitHub repository
-page or a GitHub Pages site satisfies it.
+### Support URL  ✅
+```
+https://github.com/<your-username>/NinetyNine
+```
+The repository README has a **Support** section pointing at GitHub Issues, which
+is a reachable, working support channel. Substitute your username once the repo
+is pushed.
+
+### Marketing URL (optional)
+Same URL, or leave blank — it's not required.
+
+### Privacy policy URL  ✅
+```
+https://github.com/<your-username>/NinetyNine/blob/main/PRIVACY.md
+```
+**Required for every app**, including ones that collect nothing. `PRIVACY.md` in
+the repo root covers it and is accurate to what the app actually does.
 
 ### App Privacy questionnaire
 Answer **"No, we do not collect data from this app."** That's accurate: there is
@@ -174,7 +189,8 @@ no analytics SDK, no network code, no account, and no identifier collection.
    (Or upload the exported `.ipa` with Transporter.)
 
 6. **Fill in the listing** using the copy above, and upload the screenshots from
-   `Artifacts/screenshots/`.
+   `Artifacts/screenshots/`. Set the support and privacy policy URLs to your
+   GitHub repo (see the URLs above).
 
 7. **Submit for review.** First reviews typically take 24–48 hours.
 

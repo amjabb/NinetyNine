@@ -1,0 +1,23 @@
+Copyright (c) 2026 Amir Jabbari. All rights reserved.
+
+This source code is made publicly viewable for reference, for portfolio
+purposes, and to serve as the support page for the Ninety-Nine iOS app.
+
+It is NOT open source. No licence is granted to copy, modify, distribute,
+sublicense, or publish this software or any derivative of it, in source or
+binary form, including to any application store.
+
+You may:
+  - read the source and learn from it
+  - clone it and build it locally for your own private evaluation
+  - quote short excerpts with attribution, for discussion or review
+
+You may not:
+  - redistribute this software or a derivative of it, in whole or in part
+  - publish a build of it, or of anything substantially derived from it
+  - use the name "Ninety-Nine", the wordmark, or the app icon for your own app
+
+The rules of the card game itself are not covered by this notice — game rules
+are not copyrightable, and you are welcome to implement them yourself.
+
+For any other use, please open an issue to ask.
