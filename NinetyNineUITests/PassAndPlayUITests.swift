@@ -149,6 +149,7 @@ final class PassAndPlayUITests: XCTestCase {
             }
 
             if resolveDeclarationSheetIfPresent() { continue }
+            if pickAWellCardIfAsked() { continue }
             if app.staticTexts["No legal card"].exists {
                 if tapFirst(["The Well", "Skip", "No outs"]) { continue }
             } else if app.staticTexts["Your move"].exists {
@@ -169,6 +170,18 @@ final class PassAndPlayUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Answers the well's "pick one" prompt. Returns false when it isn't up.
+    @discardableResult
+    private func pickAWellCardIfAsked() -> Bool {
+        guard app.staticTexts["Pick one. You won't know until you turn it."].exists else { return false }
+        let card = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
+        ).firstMatch
+        guard card.exists, card.isHittable else { return false }
+        card.tap()
+        return true
+    }
 
     private func handoffButton(for name: String) -> XCUIElement {
         app.buttons.matching(

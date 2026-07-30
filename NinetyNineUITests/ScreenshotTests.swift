@@ -111,6 +111,7 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 0.2)
                 continue
             }
+            if pickAWellCardIfAsked() { continue }
             if tapFirstExisting(["Snackoo", "The Well", "Skip", "No outs"]) { continue }
             if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) { continue }
             if tapAPlayableCard() { continue }
@@ -173,6 +174,17 @@ final class ScreenshotTests: XCTestCase {
         // Leave the board untouched so the play loop below starts from a clean
         // position rather than mid-decision.
         if app.buttons["Back"].exists { app.buttons["Back"].tap() }
+        return true
+    }
+
+    @discardableResult
+    private func pickAWellCardIfAsked() -> Bool {
+        guard app.staticTexts["Pick one. You won't know until you turn it."].exists else { return false }
+        let card = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
+        ).firstMatch
+        guard card.exists, card.isHittable else { return false }
+        card.tap()
         return true
     }
 

@@ -216,7 +216,8 @@ final class MatchCoordinator: ObservableObject {
             action = engine.state.pendingWell?.card.id == cardID
                 ? .resolveWell(declaration: declaration)
                 : .play(cardID: cardID, declaration: declaration)
-        case .useWell: action = .drawFromWell
+        // The AI has no information to choose on, so it takes the first slot.
+            case .useWell: action = .drawFromWell(slot: 0)
         case .skip: action = .skip
         case .snackoo(let kind): action = .snackoo(kind: PlayerAction.SnackooKind(kind))
         case .concede: action = .concede
@@ -332,6 +333,10 @@ final class MatchCoordinator: ObservableObject {
     var isOver: Bool { engine?.state.isOver ?? false }
     var winnerID: String? { engine?.state.winnerID }
     var currentPlayerID: String? { engine?.state.currentPlayer.id }
+
+    /// Who deals the next game. The rulebook is specific: the player eliminated
+    /// *first* deals next — a small consolation for going out early.
+    var nextDealerID: String? { engine?.state.firstEliminatedID }
 
     /// Final standings, for the game-over screen. Derived from elimination order.
     var finishingOrder: [(participant: MatchParticipant, position: Int)] {

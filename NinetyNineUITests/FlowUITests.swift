@@ -178,8 +178,21 @@ final class FlowUITests: XCTestCase {
         )
         ShotCollector.capture(app, name: "40-outcome")
 
-        // Rematch should deal a fresh table.
+        // Rematch now routes through the dealer prompt: the first player out
+        // deals next and chooses the hand size.
         app.buttons["Rematch"].tap()
+        let dealPrompt = app.staticTexts["First one out deals the next game."]
+        XCTAssertTrue(
+            dealPrompt.waitForExistence(timeout: 8),
+            "Rematch should ask the dealer how many to deal"
+        )
+        ShotCollector.capture(app, name: "43-next-deal")
+
+        let deal = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Deal", "Continue")
+        ).firstMatch
+        XCTAssertTrue(deal.exists, "The dealer prompt should offer to deal")
+        deal.tap()
         XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10), "Rematch should deal again")
         ShotCollector.capture(app, name: "41-rematch")
 
@@ -224,6 +237,7 @@ final class FlowUITests: XCTestCase {
                     return
                 }
 
+                if pickAWellCardIfAsked() { continue }
                 if app.staticTexts["No legal card"].exists {
                     if tapFirstExisting(byLabelPrefix: ["The Well", "Skip", "No outs"]) == true { continue }
                 } else if app.staticTexts["Your move"].exists {
@@ -270,6 +284,9 @@ final class FlowUITests: XCTestCase {
             // Query each control only in the state where it actually exists —
             // polling for "The Well" on every iteration races against the
             // opponents' turns.
+            // The well now asks which of the two face-down cards to turn over.
+            if pickAWellCardIfAsked() { continue }
+
             if app.staticTexts["No legal card"].exists {
                 if tapFirstExisting(byLabelPrefix: ["The Well", "Skip", "No outs"]) == true { continue }
             } else if app.staticTexts["Your move"].exists {
@@ -277,6 +294,18 @@ final class FlowUITests: XCTestCase {
                 if tapAPlayableCard() { continue }
             }
         }
+    }
+
+    /// Answers the well's "pick one" prompt. Returns false when it isn't up.
+    @discardableResult
+    private func pickAWellCardIfAsked() -> Bool {
+        guard app.staticTexts["Pick one. You won't know until you turn it."].exists else { return false }
+        let card = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
+        ).firstMatch
+        guard card.exists, card.isHittable else { return false }
+        card.tap()
+        return true
     }
 
     // MARK: - Helpers
