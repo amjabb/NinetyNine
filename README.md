@@ -40,6 +40,8 @@ xcodebuild test -project NinetyNine.xcodeproj -scheme NinetyNine \
                  completion, and a full pass-and-play game through the hand-off
 ```
 
+Both game modes are verified on iPhone and on a 13" iPad Pro.
+
 The UI tests are not decoration — they found four real bugs that screenshots
 alone missed, including a hand fan that overflowed the screen and an
 accessibility label that made the hand unusable with VoiceOver. See the commit
