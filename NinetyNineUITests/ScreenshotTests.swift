@@ -112,7 +112,16 @@ final class ScreenshotTests: XCTestCase {
                 continue
             }
             if pickAWellCardIfAsked() { continue }
-            if tapFirstExisting(["Snackoo", "The Well", "Skip", "No outs"]) { continue }
+
+            // Query each control only in the state where it exists. Polling for
+            // "The Well" every iteration races the opponents' turns, and
+            // resolving a query mid-transition throws rather than returning
+            // empty.
+            if app.staticTexts["No legal card"].exists {
+                if tapFirstExisting(["The Well", "Skip", "No outs"]) { continue }
+            } else if tapFirstExisting(["Snackoo"]) {
+                continue
+            }
             if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) { continue }
             if tapAPlayableCard() { continue }
             Thread.sleep(forTimeInterval: 0.2)
@@ -183,9 +192,7 @@ final class ScreenshotTests: XCTestCase {
         let card = app.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
         ).firstMatch
-        guard card.exists, card.isHittable else { return false }
-        card.tap()
-        return true
+        return tapSteadily(card)
     }
 
     private func shot(_ name: String) {
@@ -202,13 +209,29 @@ final class ScreenshotTests: XCTestCase {
             let element = app.buttons.matching(
                 NSPredicate(format: "label BEGINSWITH %@", prefix)
             ).firstMatch
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
+            if tapSteadily(element) { return true }
         }
         return false
     }
+
+    /// Tap an element by absolute coordinate rather than by re-resolving it.
+    ///
+    /// `element.tap()` re-queries at tap time, so a button that was present a
+    /// millisecond ago but is mid-animation raises "No matches found" and fails
+    /// the test. Banners in this app dismiss on timers, which re-renders the
+    /// action bar underneath. Capturing the frame first and tapping the app at
+    /// that point sidesteps the re-resolve entirely.
+    @discardableResult
+    private func tapSteadily(_ element: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let frame = element.frame
+        guard frame.width > 0, frame.height > 0 else { return false }
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+        return true
+    }
+
 
     /// Taps a playable card. `preferringRanks` matches against the card's
     /// accessibility label ("Queen of Hearts"), and returns false rather than

@@ -148,22 +148,44 @@ boundary.** There is no longer any code path anywhere in the app where the scree
 holds another player's cards. That wasn't the goal of the refactor, it just falls
 out of having one path instead of two.
 
-### What's left for GameKit
+### GameKit — what's built
 
-Only the adapter. `GameKitTransport` implements four methods —
-`start`, `send`, `leave`, and delivering `MatchUpdate`s — against a protocol that
-already has tests. Specifically:
+`GameKitTransport` implements `MatchTransport` over `GKTurnBasedMatch`, and
+`GameCenterSession` holds sign-in state as one observable thing (the auth handler
+can fire repeatedly — on sign-out, on account switch — so scattering
+`isAuthenticated` checks through the UI would mean each one silently going stale).
 
-1. `GKLocalPlayer.local.authenticateHandler` for sign-in.
-2. `GKTurnBasedMatchmakerViewController` for matchmaking.
-3. Encode `[SubmittedAction]` + seed as the match data (a full game's log is
-   already asserted to fit inside the 64KB cap).
-4. `endTurn(withNextParticipants:)` after each move; `participantQuitInTurn` maps
-   onto the existing `.forfeit` action.
-5. Hop to the main actor before calling `onUpdate` — the protocol is `@MainActor`
-   and its callers depend on synchronous delivery.
+The wire format is the **seed plus the ordered action log**, never a `GameState`.
+A serialised state would carry every player's hand, handing the whole game to
+anyone who reads the blob. `GameKitPayloadTests` asserts the payload has no field
+that could hold hidden state, that a full game fits inside the 64KB cap, and that
+a peer replaying the transmitted log reaches a byte-identical state.
 
-Everything above the transport is done and tested.
+Online is a soft capability: if Game Center is unavailable the setup screen says
+so plainly and solo and pass-and-play are unaffected.
+
+### ⚠️ What cannot be tested here
+
+**A real two-player match has not been played.** It needs two Game Center
+accounts signing in interactively on two devices, which is not something the
+automated suite can do. What is verified: it compiles, the payload round-trips,
+the log replays identically, and the unauthenticated path degrades cleanly.
+
+The turn-passing itself — `endTurn`, `participantQuitInTurn`, and the listener
+callbacks — is **written but unexercised**. Treat first real-device testing as
+finding bugs, not confirming their absence.
+
+### Console steps (yours — the code can't do these)
+
+1. **Developer portal** → Identifiers → `com.amirjabbari.ninetynineapp` → enable
+   **Game Center**.
+2. **App Store Connect** → the app → **Game Center** → enable it. No leaderboards
+   or achievements are needed; turn-based matching works without them.
+3. Regenerate the provisioning profile if Xcode doesn't do it automatically —
+   the entitlement is already in `Config/NinetyNine.entitlements`.
+4. **Sandbox testing**: sign in to Game Center with a sandbox Apple ID on two
+   devices. The simulator can authenticate but two simulators cannot reliably
+   match against each other; use real hardware for the first end-to-end run.
 
 ---
 
