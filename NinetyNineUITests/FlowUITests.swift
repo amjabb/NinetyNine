@@ -178,7 +178,11 @@ final class FlowUITests: XCTestCase {
         // This is the real integration test: it exercises card taps, the
         // declaration sheet, the well, skips, and Snackoo in whatever order the
         // deal happens to produce.
-        playUntilGameOver(moveBudget: 260)
+        // Generous: a three-handed game recycles the deck several times, and
+        // under full-suite load each XCUITest query costs real milliseconds. The
+        // headless tests already prove games terminate — what this proves is
+        // that the *UI* can drive one to the end.
+        playUntilGameOver(moveBudget: 420)
 
         ShotCollector.capture(app, name: "39-end-of-budget")
 
@@ -206,7 +210,10 @@ final class FlowUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(deal.waitForExistence(timeout: 5), "The dealer prompt should offer to deal")
         tapSteadily(deal)
-        XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10), "Rematch should deal again")
+        // A rematch is a fresh deal, so every player builds a well again before
+        // there is a table to look at.
+        app.buildAllWells()
+        XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 12), "Rematch should deal again")
         ShotCollector.capture(app, name: "41-rematch")
 
         // And quitting should land back on the menu.
@@ -234,12 +241,7 @@ final class FlowUITests: XCTestCase {
 
                 Thread.sleep(forTimeInterval: 0.2)
                 if app.buttons["Rematch"].exists { break }
-                // A rematch deals again, so the well builder can reappear
-            // part-way through the loop.
-            if app.otherElements["well-selection"].exists {
-                if app.buildOneWell(timeout: 2) { continue }
-            }
-            if resolveDeclarationSheetIfPresent() { continue }
+                if resolveDeclarationSheetIfPresent() { continue }
                 guard isPlayersTurn else { continue }
 
                 if let dead = handCards.first(where: { ($0.value as? String) == "Not playable" }) {
@@ -311,11 +313,6 @@ final class FlowUITests: XCTestCase {
                 continue
             }
 
-            // A rematch deals again, so the well builder can reappear
-            // part-way through the loop.
-            if app.otherElements["well-selection"].exists {
-                if app.buildOneWell(timeout: 2) { continue }
-            }
             if resolveDeclarationSheetIfPresent() { continue }
 
             // Query each control only in the state where it actually exists —
@@ -329,6 +326,13 @@ final class FlowUITests: XCTestCase {
             } else if app.staticTexts["Your move"].exists {
                 if tapFirstExisting(byLabelPrefix: ["Snackoo"]) == true { continue }
                 if tapAPlayableCard() { continue }
+            } else if app.otherElements["well-selection"].isHittable {
+                // A rematch deals again, so the well builder can reappear
+                // mid-loop. Checked *last* and only when nothing else was
+                // actionable: `isHittable` is an expensive query and running it
+                // on every one of a few hundred moves cost this test more time
+                // than the game itself.
+                app.buildOneWell(timeout: 2)
             }
         }
     }

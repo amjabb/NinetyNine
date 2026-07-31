@@ -787,3 +787,89 @@ final class MovingTheLockTests: XCTestCase {
         XCTAssertFalse(engine.state.topPlayedAsEight)
     }
 }
+
+// MARK: - A Queen played as an 8 must ask which suit
+
+/// Reported from a real game: an opponent locked the suit, the player answered
+/// with a Queen declared as an 8, and was never asked where to point the lock.
+///
+/// The engine was never the problem — it offers every suit. The sheet resolved
+/// the Queen's options by picking whichever produced the lowest tally, and every
+/// lock suit produces the *same* tally, so the tie-break silently chose one.
+/// These pin the engine half; the sheet now asks as a second step.
+final class QueenAsEightDeclarationTests: XCTestCase {
+
+    private func lockedBoard(_ lock: Suit, tally: Int = 20) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 5),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 5),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        state.suitLock = SuitLock(suit: lock, setByPlayerID: "b")
+        // The lock was just set by an 8, which is the situation described.
+        state.topPlayedAsEight = true
+        return state
+    }
+
+    func testAQueenUnderALockIsOfferedEverySuitAsAnEight() {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let declarations = Rules.legalDeclarations(for: queen, in: lockedBoard(.hearts))
+        let asEight = declarations.filter { $0.queenAs == .eight }
+
+        for suit in Suit.allCases {
+            XCTAssertTrue(
+                asEight.contains { $0.lockSuit == suit },
+                "A Queen played as an 8 should be able to lock \(suit.displayName)"
+            )
+        }
+        XCTAssertTrue(
+            asEight.contains { $0.declinesLock },
+            "…and to lock nothing at all"
+        )
+        XCTAssertEqual(asEight.count, 5, "Four suits plus declining")
+    }
+
+    /// Every one of those options is genuinely legal — so a UI that showed them
+    /// all can't produce a refused move.
+    func testEveryOfferedQueenAsEightOptionIsAccepted() throws {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let state = lockedBoard(.hearts)
+        let asEight = Rules.legalDeclarations(for: queen, in: state).filter { $0.queenAs == .eight }
+        XCTAssertFalse(asEight.isEmpty)
+
+        for declaration in asEight {
+            switch Rules.resolve(card: queen, declaration: declaration, in: state) {
+            case .success(let effect):
+                XCTAssertEqual(effect.effectiveRank, .eight)
+                XCTAssertEqual(effect.newTally, 28)
+                if declaration.declinesLock {
+                    XCTAssertNil(effect.locksSuit)
+                    XCTAssertTrue(effect.liftsSuitLock, "Declining should free the table")
+                } else {
+                    XCTAssertEqual(effect.locksSuit, declaration.lockSuit)
+                }
+            case .failure(let reason):
+                XCTFail("Offered but refused: \(reason.explanation)")
+            }
+        }
+    }
+
+    /// The tie-break that caused it: all five options land on the same tally, so
+    /// "pick the lowest" cannot distinguish them and silently took the first.
+    func testTheOptionsAreIndistinguishableByTallyWhichIsWhyItHadToAsk() {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let state = lockedBoard(.hearts)
+        let tallies = Rules.legalDeclarations(for: queen, in: state)
+            .filter { $0.queenAs == .eight }
+            .compactMap { declaration -> Int? in
+                guard case .success(let effect) = Rules.resolve(
+                    card: queen, declaration: declaration, in: state
+                ) else { return nil }
+                return effect.newTally
+            }
+        XCTAssertEqual(Set(tallies).count, 1, "All the same tally — nothing to sort on")
+    }
+}

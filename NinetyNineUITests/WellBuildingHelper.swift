@@ -29,15 +29,21 @@ extension XCUIApplication {
         let deadline = Date().addingTimeInterval(timeout)
 
         while Date() < deadline {
-            if otherElements["well-selection"].exists {
-                guard bankTwoCards() else { break }
-                built += 1
+            // `isHittable` everywhere in here, never `exists`: a covered screen
+            // is still in the hierarchy, so `exists` says the well builder is up
+            // while the hand-off is on top of it — and then the confirm button
+            // can't be tapped and the whole opening stalls.
+            if otherElements["well-selection"].isHittable {
+                if bankTwoCards() { built += 1 }
                 continue
             }
             if dismissHandoffIfPresent() { continue }
             // Neither is up: either the table is ready, or something is still
-            // animating. Stop as soon as the table exists.
-            if otherElements["Tally"].exists && built > 0 { break }
+            // animating. `isHittable`, not `exists` — the table stays in the
+            // hierarchy underneath the hand-off, so `exists` is true while the
+            // device is still covered and this would stop with later players'
+            // wells unbuilt.
+            if otherElements["Tally"].isHittable && built > 0 { break }
             Thread.sleep(forTimeInterval: 0.3)
         }
         return built
@@ -48,7 +54,7 @@ extension XCUIApplication {
     func buildOneWell(timeout: TimeInterval = 12) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if otherElements["well-selection"].exists { return bankTwoCards() }
+            if otherElements["well-selection"].isHittable, bankTwoCards() { return true }
             if dismissHandoffIfPresent() { continue }
             Thread.sleep(forTimeInterval: 0.3)
         }
@@ -58,7 +64,7 @@ extension XCUIApplication {
     /// Tap candidates until the confirm button goes live, then confirm.
     private func bankTwoCards() -> Bool {
         let confirm = buttons["well-confirm"]
-        guard confirm.waitForExistence(timeout: 4) else { return false }
+        guard confirm.waitForExistence(timeout: 3), confirm.isHittable else { return false }
 
         var guardCount = 0
         while !confirm.isEnabled && guardCount < 12 {
@@ -66,7 +72,13 @@ extension XCUIApplication {
             let candidates = descendants(matching: .any)
                 .matching(NSPredicate(format: "identifier BEGINSWITH %@", "well-candidate-"))
                 .allElementsBoundByIndex
-            guard let next = candidates.first(where: { $0.isHittable }) else { break }
+            // Only cards that aren't already buried. The row is positional — a
+            // chosen card stays exactly where it is rather than leaving the
+            // list — so "the first hittable one" is the same card every time,
+            // and tapping it just toggles it back off forever.
+            guard let next = candidates.first(where: {
+                $0.isHittable && ($0.value as? String) != "In your well"
+            }) else { break }
             next.tap()
         }
         guard confirm.isEnabled else { return false }

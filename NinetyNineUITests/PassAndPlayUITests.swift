@@ -174,7 +174,7 @@ final class PassAndPlayUITests: XCTestCase {
 
             // A rematch deals again, so the well builder can reappear
             // part-way through the loop.
-            if app.otherElements["well-selection"].exists {
+            if app.otherElements["well-selection"].isHittable {
                 if app.buildOneWell(timeout: 2) { continue }
             }
             if resolveDeclarationSheetIfPresent() { continue }
