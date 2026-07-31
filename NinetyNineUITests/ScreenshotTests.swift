@@ -60,12 +60,31 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.8)
         shot("store-5-setup")
 
-        // 5 — The table, early and then under real pressure.
+        // 6 — Building your well. The headline of this version and the first
+        // thing anyone sees in a game, so it earns a slot: face-down cards, and
+        // a decision you make without information.
         app.buttons["Deal"].tap()
+        XCTAssertTrue(
+            app.otherElements["well-selection"].waitForExistence(timeout: 12),
+            "A game should open on the well builder"
+        )
+        Thread.sleep(forTimeInterval: 1.6)
+        // With two buried, so the slots are filled and the intent is legible.
+        let candidates = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "well-candidate-"))
+            .allElementsBoundByIndex
+        if candidates.count > 3 {
+            candidates[1].tap()
+            candidates[3].tap()
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        shot("store-6-well")
+
+        // 7 — The table, early and then under real pressure.
         app.buildAllWells()
         XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10))
         Thread.sleep(forTimeInterval: 2.4)
-        shot("store-6-table")
+        shot("store-7-table")
 
         // Capture the declaration sheet on turn one, where the tally is 0 and
         // every card is legal — so an Ace, an 8, or a Queen in hand is guaranteed
@@ -102,14 +121,14 @@ final class ScreenshotTests: XCTestCase {
             // whenever one does appear later.
             if !capturedSheet, isDeclarationSheetUp {
                 Thread.sleep(forTimeInterval: 0.6)
-                shot("store-7-declaration")
+                shot("store-8-declaration")
                 capturedSheet = true
             }
             if resolveDeclarationSheetIfPresent() { continue }
 
             if !capturedTension, let tally = currentTally, tally >= 78 {
                 Thread.sleep(forTimeInterval: 0.5)
-                shot("store-8-pressure")
+                shot("store-9-pressure")
                 capturedTension = true
             }
 
@@ -118,6 +137,14 @@ final class ScreenshotTests: XCTestCase {
                 continue
             }
             if pickAWellCardIfAsked() { continue }
+
+            // While the declaration shot is still outstanding, go looking for it
+            // — play an Ace, an 8 or a Queen in preference to anything else.
+            // Leaving it to whatever the hand happened to hold missed the shot
+            // about a quarter of the time.
+            if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) {
+                continue
+            }
 
             // Query each control only in the state where it exists. Polling for
             // "The Well" every iteration races the opponents' turns, and
@@ -140,7 +167,7 @@ final class ScreenshotTests: XCTestCase {
         var capturedOutcome = false
         if app.buttons["Rematch"].waitForExistence(timeout: 60) {
             Thread.sleep(forTimeInterval: 1.2)
-            shot("store-9-outcome")
+            shot("store-10-outcome")
             capturedOutcome = true
         }
 
@@ -185,7 +212,7 @@ final class ScreenshotTests: XCTestCase {
         else { return false }
 
         Thread.sleep(forTimeInterval: 0.7)
-        shot("store-7-declaration")
+        shot("store-8-declaration")
         // Leave the board untouched so the play loop below starts from a clean
         // position rather than mid-decision.
         if app.buttons["Back"].exists { app.buttons["Back"].tap() }

@@ -285,6 +285,21 @@ final class MatchCoordinator: ObservableObject {
         updateHandoffState()
     }
 
+    #if DEBUG
+    /// Put a known hand in front of the viewing player. Reproducing a reported
+    /// hand by shuffling for it is a waiting game; this states it.
+    func _forceHandForTesting(_ hand: [Card], tally: Int) {
+        guard let engine, let id = viewingPlayerID else { return }
+        var state = engine.state
+        guard let seat = state.index(of: id) else { return }
+        state.players[seat].hand = hand
+        state.currentPlayerIndex = seat
+        state.tally = tally
+        engine._replaceStateForTesting(state)
+        refreshView()
+    }
+    #endif
+
     // MARK: View
 
     private func absorb(_ events: [GameEvent]) {

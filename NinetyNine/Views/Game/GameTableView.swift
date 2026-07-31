@@ -291,23 +291,43 @@ struct GameTableView: View {
     }
 
     private var turnIndicator: some View {
-        Group {
-            if viewModel.view?.isOver ?? false {
-                EmptyView()
-            } else if viewModel.isYourTurn {
-                Text(viewModel.options.canPlayFromHand ? "Your move" : "No legal card")
-                    .font(Typography.sectionTitle)
-                    .foregroundStyle(viewModel.options.canPlayFromHand ? Palette.brassLight : Palette.danger)
-                    .transition(.opacity)
-            } else {
-                Text("\(currentPlayerName) is thinking…")
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.ivoryDim)
-                    .transition(.opacity)
+        VStack(spacing: 2) {
+            Group {
+                if viewModel.view?.isOver ?? false {
+                    EmptyView()
+                } else if viewModel.isYourTurn {
+                    Text(viewModel.options.canPlayFromHand ? "Your move" : "No legal card")
+                        .font(Typography.sectionTitle)
+                        .foregroundStyle(viewModel.options.canPlayFromHand ? Palette.brassLight : Palette.danger)
+                        .transition(.opacity)
+                } else {
+                    Text("\(currentPlayerName) is thinking…")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.ivoryDim)
+                        .transition(.opacity)
+                }
+            }
+
+            // Who's on the receiving end. Knowing this is most of the tactics in
+            // 99 — whether to hand the next player a 99 or a clean slate — and a
+            // small CW/CCW badge in the corner was leaving people to work it out
+            // from the seating.
+            if !(viewModel.view?.isOver ?? false), let next = viewModel.nextPlayerName {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(next == "You" ? "then you" : "then \(next)")
+                        .font(Typography.label)
+                        .tracking(0.8)
+                }
+                .foregroundStyle(Palette.ivoryFaint)
+                .transition(.opacity)
+                .accessibilityLabel(next == "You" ? "You play next" : "\(next) plays next")
             }
         }
-        .frame(height: 24)
+        .frame(height: 40)
         .animation(Motion.panel, value: viewModel.isYourTurn)
+        .animation(Motion.panel, value: viewModel.nextPlayerName)
     }
 
     // MARK: - Overlays
@@ -443,7 +463,8 @@ struct GameTableView: View {
 
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id), .rescue(_, _, let id):
+        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
+             .rescue(_, _, let id), .survived(_, let id):
             return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
             return ""
@@ -452,7 +473,8 @@ struct GameTableView: View {
 
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id), .rescue(_, _, let id):
+        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
+             .rescue(_, _, let id), .survived(_, let id):
             return id == viewModel.viewingPlayerID
         case .idle:
             return false

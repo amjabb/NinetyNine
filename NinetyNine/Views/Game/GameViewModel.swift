@@ -99,6 +99,10 @@ final class GameViewModel: ObservableObject {
         /// Unplayable, but the third of its rank — the player is offered the
         /// Snackoo before being told they're out.
         case rescue(card: Card, rank: Rank, playerID: String)
+        /// It played. You went to the well expecting to lose and didn't, and
+        /// you're two cards richer — the only unambiguously good thing that
+        /// happens in a game of 99, so it gets its own beat.
+        case survived(card: Card, playerID: String)
     }
 
     struct PendingChoice: Identifiable, Equatable {
@@ -314,6 +318,14 @@ final class GameViewModel: ObservableObject {
     }
 
     var opponents: [OpponentView] { view?.opponents ?? [] }
+
+    /// Who plays after whoever is acting now — "you" when that's you, because
+    /// "Amir is next" reads oddly on your own device.
+    var nextPlayerName: String? {
+        guard let view, let id = view.nextPlayerID else { return nil }
+        if id == view.youID { return "You" }
+        return participants.first { $0.id == id }?.name
+    }
     var yourHand: [Card] { view?.yourHand ?? [] }
 
     /// Cards legal against the current board. Computed from the redacted view,
@@ -434,15 +446,42 @@ final class GameViewModel: ObservableObject {
         Haptics.shared.play(.cardLift)
         SoundEngine.shared.play(.cardLift, volume: 0.6)
         withAnimation(Motion.panel) {
-            // Open with the pressed card and its first partner already chosen —
-            // a pair is the common case and the builder should start useful.
-            let partner = matching.first { $0.id != card.id }
             pendingSet = PendingSet(
                 rank: card.rank,
                 available: matching,
-                selected: [card, partner].compactMap { $0 }
+                selected: openingRun(pressed: card, from: matching, in: context)
             )
         }
+    }
+
+    /// What the builder opens with: **every copy you hold**, or as many of them
+    /// as are actually legal.
+    ///
+    /// It used to open on a pair, which read as a limit rather than a starting
+    /// point — a player holding three of a rank reported that the game "only let
+    /// them play two". Opening on the whole run says what's possible; dropping
+    /// one is a tap.
+    ///
+    /// Trimmed to the longest legal prefix so it can never open in a state where
+    /// Play is disabled, which would look equally broken.
+    private func openingRun(
+        pressed: Card, from matching: [Card], in context: GameState
+    ) -> [Card] {
+        // The pressed card leads; the rest follow in hand order.
+        var ordered = [pressed]
+        ordered += matching.filter { $0.id != pressed.id }
+
+        var best: [Card] = []
+        for count in 2...ordered.count {
+            let candidate = Array(ordered.prefix(count))
+            if !Rules.legalDeclarations(forSet: candidate, in: context).isEmpty {
+                best = candidate
+            } else {
+                // Runs only get more expensive, so the first refusal is the wall.
+                break
+            }
+        }
+        return best.isEmpty ? Array(ordered.prefix(2)) : best
     }
 
     /// Add or remove a card from the run. The pressed card can be removed like
@@ -790,11 +829,23 @@ final class GameViewModel: ObservableObject {
             Haptics.shared.play(.eliminated)
             SoundEngine.shared.play(.eliminated)
         }
-        try? await Task.sleep(for: .milliseconds(playable ? 1_250 : 1_500))
+        try? await Task.sleep(for: .milliseconds(playable ? 1_100 : 1_500))
 
         await absorb(events)
 
-        if !playable, let rank = rescueRank ?? view?.pendingWell?.snackooRank {
+        if playable {
+            // Hold on the win before handing the table back.
+            withAnimation(Motion.drama) {
+                wellReveal = .survived(card: card, playerID: playerID)
+            }
+            Haptics.shared.play(.snackoo)
+            SoundEngine.shared.play(.wellSurvive, volume: 0.9)
+            try? await Task.sleep(for: .milliseconds(1_700))
+            withAnimation(Motion.drama) { wellReveal = .idle }
+            return
+        }
+
+        if let rank = rescueRank ?? view?.pendingWell?.snackooRank {
             withAnimation(Motion.drama) {
                 wellReveal = .rescue(card: card, rank: rank, playerID: playerID)
             }
@@ -851,6 +902,13 @@ final class GameViewModel: ObservableObject {
     // MARK: - Event choreography
 
     #if DEBUG
+    /// Put a known hand on the table. Reproducing a reported hand by shuffling
+    /// for it is a waiting game; this states it.
+    func _forceHandForTesting(_ hand: [Card], tally: Int) {
+        coordinator._forceHandForTesting(hand, tally: tally)
+        syncFromCoordinator()
+    }
+
     /// Feed a timeline straight in. Reaching the once-per-game moments through
     /// real play means waiting for a particular card to come off the deck, which
     /// makes a test either slow, flaky, or both.

@@ -41,6 +41,9 @@ struct WellRevealOverlay: View {
                     if case .revealed(_, let playable, _) = phase {
                         verdictBurst(playable: playable)
                     }
+                    if case .survived = phase {
+                        verdictBurst(playable: true)
+                    }
                     cardStage
                 }
                 .frame(height: 250)
@@ -73,6 +76,7 @@ struct WellRevealOverlay: View {
         switch phase {
         case .choosing: return "Pick one. You won't know until you turn it."
         case .rescue: return "It won't play — but it's your third."
+        case .survived: return "It plays."
         default: return "One card. Everything rides on it."
         }
     }
@@ -139,6 +143,10 @@ struct WellRevealOverlay: View {
                         .shadow(color: Palette.danger.opacity(0.8), radius: 8)
                 }
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
+
+        case .survived(let card, _):
+            FlippableCard(card: card, isFaceUp: true, isPlayable: true)
+                .frame(width: 168)
 
         case .revealed(let card, let playable, _):
             FlippableCard(card: card, isFaceUp: true, isPlayable: playable)
@@ -207,6 +215,36 @@ struct WellRevealOverlay: View {
             Text("Drawing…")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.ivoryDim)
+
+        case .survived:
+            VStack(spacing: 12) {
+                Text(isHuman ? "THE WELL HOLDS" : "\(playerName) SURVIVES")
+                    .font(.system(size: 26, weight: .black, design: .serif))
+                    .tracking(2)
+                    .foregroundStyle(Palette.safe)
+                    .shadow(color: Palette.safe.opacity(0.55), radius: 16)
+
+                // The reward, stated — it's the only thing in 99 that hands you
+                // cards instead of taking them.
+                HStack(spacing: 10) {
+                    Image(systemName: "plus.rectangle.on.rectangle")
+                        .font(.system(size: 17, weight: .bold))
+                    Text("Draw two")
+                        .font(Typography.bodyEmphasised)
+                }
+                .foregroundStyle(Palette.feltEdge)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 11)
+                .background(Capsule().fill(Palette.brassLight))
+
+                Text(isHuman
+                    ? "You went in with nothing and came out ahead."
+                    : "They came out of it two cards richer.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.ivoryDim)
+                    .multilineTextAlignment(.center)
+            }
+            .transition(.scale(scale: 0.86).combined(with: .opacity))
 
         case .rescue(_, let rank, _):
             VStack(spacing: 14) {

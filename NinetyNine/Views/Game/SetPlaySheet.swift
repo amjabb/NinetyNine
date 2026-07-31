@@ -100,6 +100,10 @@ struct SetPlaySheet: View {
                 ? "\(count.spelledOut.capitalized) reversals cancel out — play carries on the way it's going."
                 : "\(count.spelledOut.capitalized) reversals — the direction flips."
         }
+        if pending.selected.count == pending.available.count {
+            return "All \(pending.available.count.spelledOut) of them, landing one after another. "
+                + "Tap one to keep it back."
+        }
         return "Tap to add or drop a card. They land one after another."
     }
 
@@ -130,8 +134,11 @@ struct SetPlaySheet: View {
                 CardFaceView(card: card)
                     .frame(width: 62)
                     .cardShadow(lift: motion.displacement(isSelected ? 12 : 3))
-                    .opacity(isSelected ? 1 : 0.42)
-                    .scaleEffect(isSelected ? 1.0 : 0.92)
+                    // Was 0.42, which read as *disabled* sitting next to two
+                    // bright ones — a player reported the game wouldn't let them
+                    // play a third card they could in fact play.
+                    .opacity(isSelected ? 1 : 0.72)
+                    .scaleEffect(isSelected ? 1.0 : 0.94)
                     .offset(y: motion.displacement(isSelected ? -8 : 0))
 
                 if let position {

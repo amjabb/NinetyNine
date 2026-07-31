@@ -197,6 +197,28 @@ extension PlayerView {
     /// Only your own cards can be judged this way, which is exactly the set the
     /// UI needs. Nothing hidden is invented — the reconstructed state has empty
     /// opponent hands, and no rule consults them.
+    /// Who plays after the current player, skipping anyone knocked out.
+    ///
+    /// Computed from the seating order and the direction rather than sent, so it
+    /// can't disagree with the arrow on the table.
+    var nextPlayerID: String? {
+        guard !isOver, seatingOrder.count > 1 else { return nil }
+        guard let start = seatingOrder.firstIndex(of: currentPlayerID) else { return nil }
+
+        let step = direction >= 0 ? 1 : -1
+        var index = start
+        for _ in 0..<seatingOrder.count {
+            index = ((index + step) % seatingOrder.count + seatingOrder.count) % seatingOrder.count
+            let id = seatingOrder[index]
+            if id == youID {
+                if !youAreEliminated { return id }
+            } else if opponent(id: id)?.isEliminated == false {
+                return id
+            }
+        }
+        return nil
+    }
+
     /// True while *you* are the one banking cards.
     var youAreChoosingYourWell: Bool { wellChooserID == youID }
 

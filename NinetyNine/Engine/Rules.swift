@@ -425,7 +425,13 @@ enum Rules {
         }
         return Rank.allCases.filter { rank in
             guard let cards = counts[rank], cards.count > 1 else { return false }
-            return legalDeclarations(forSet: cards, in: state).isEmpty == false
+            // *Any* run of two or more, not the whole holding. Testing only the
+            // full set meant that holding three 7s near the ceiling made the
+            // rank un-runnable outright — even though two of them were legal and
+            // the player could see it.
+            return (2...cards.count).contains { length in
+                !legalDeclarations(forSet: Array(cards.prefix(length)), in: state).isEmpty
+            }
         }
     }
 
