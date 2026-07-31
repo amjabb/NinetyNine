@@ -49,6 +49,9 @@ struct WellSelectionView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 18)
+            // Keeps the composition together on an iPad instead of stranding the
+            // header, the deal and the button at three corners of a large screen.
+            .tableContentWidth()
         }
         .onAppear {
             if isForced { chosen = Array(0..<slotCount) }
@@ -104,24 +107,43 @@ struct WellSelectionView: View {
                 .tracking(1.6)
                 .foregroundStyle(Palette.ivoryFaint)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+            // Sized to fit rather than scrolled. Every card here is face down
+            // and identical, so a card hidden off the edge is indistinguishable
+            // from a card that isn't there — and on a blind pick the *count* is
+            // the only information on screen. An earlier scrolling version also
+            // left-aligned itself on an iPad, stranding the row against one edge
+            // while the well slots below sat centred.
+            GeometryReader { geometry in
+                let width = cardWidth(fitting: geometry.size.width)
+                HStack(spacing: cardSpacing) {
                     ForEach(0..<max(0, slotCount), id: \.self) { slot in
-                        faceDownCard(slot)
+                        faceDownCard(slot, width: width)
                     }
                 }
-                .padding(.horizontal, 4)
-                // Generous, because a chosen card lifts and carries a badge
-                // above its own top edge — at 10 the scroll view clipped the
-                // number clean off.
+                .frame(width: geometry.size.width, alignment: .center)
+                // Generous headroom: a chosen card lifts and carries a badge
+                // above its own top edge, and at 10 it was being clipped.
                 .padding(.top, 26)
                 .padding(.bottom, 10)
             }
+            .frame(height: maximumCardWidth / cardAspectRatio + 40)
         }
     }
 
+    private var maximumCardWidth: CGFloat { 66 }
+    private var cardSpacing: CGFloat { 8 }
+
+    /// Shrink the cards until the whole deal fits the width it's given. The
+    /// floor is a tappable target — below that, scrolling would be the lesser
+    /// evil, but a legal deal never gets there on any supported device.
+    private func cardWidth(fitting available: CGFloat) -> CGFloat {
+        let count = CGFloat(max(1, slotCount))
+        let usable = max(0, available - 8) - cardSpacing * (count - 1)
+        return max(38, min(maximumCardWidth, usable / count))
+    }
+
     @ViewBuilder
-    private func faceDownCard(_ slot: Int) -> some View {
+    private func faceDownCard(_ slot: Int, width: CGFloat) -> some View {
         let position = chosen.firstIndex(of: slot)
         let isChosen = position != nil
 
@@ -130,7 +152,7 @@ struct WellSelectionView: View {
         } label: {
             ZStack(alignment: .top) {
                 CardBackView()
-                    .frame(width: 66, height: 66 / cardAspectRatio)
+                    .frame(width: width, height: width / cardAspectRatio)
                     .cardShadow(lift: motion.displacement(isChosen ? 14 : 4))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
