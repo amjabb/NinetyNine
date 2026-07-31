@@ -37,7 +37,7 @@ final class GameKitTransport: NSObject, MatchTransport {
     private var match: GKTurnBasedMatch?
     /// Decoded contents of the match's data blob.
     private var payload: MatchPayload?
-    private var handSize: Int = 6
+    private var cardsDealt: Int = 6
 
     /// Actions we've already surfaced, so re-reading the match data after a turn
     /// change doesn't replay moves the coordinator has already applied.
@@ -56,7 +56,7 @@ final class GameKitTransport: NSObject, MatchTransport {
     /// hand — handing the whole game to anyone who reads the payload.
     struct MatchPayload: Codable {
         var seed: UInt32
-        var handSize: Int
+        var cardsDealt: Int
         var participantIDs: [String]
         var participantNames: [String]
         var actions: [SubmittedAction]
@@ -121,9 +121,9 @@ final class GameKitTransport: NSObject, MatchTransport {
     // MARK: - Matchmaking
 
     /// Present GameKit's matchmaker and wait for a match.
-    func findMatch(minPlayers: Int, maxPlayers: Int, handSize: Int) async throws -> GKTurnBasedMatch {
+    func findMatch(minPlayers: Int, maxPlayers: Int, cardsDealt: Int) async throws -> GKTurnBasedMatch {
         guard GKLocalPlayer.local.isAuthenticated else { throw MatchError.notAuthenticated }
-        self.handSize = handSize
+        self.cardsDealt = cardsDealt
 
         let request = GKMatchRequest()
         request.minPlayers = max(2, minPlayers)
@@ -179,7 +179,7 @@ final class GameKitTransport: NSObject, MatchTransport {
             let seed = UInt32.random(in: 0...UInt32.max)
             let fresh = MatchPayload(
                 seed: seed,
-                handSize: handSize,
+                cardsDealt: cardsDealt,
                 participantIDs: participants.map { $0.player?.gamePlayerID ?? UUID().uuidString },
                 participantNames: participants.map { $0.player?.displayName ?? "Player" },
                 actions: []
@@ -192,7 +192,7 @@ final class GameKitTransport: NSObject, MatchTransport {
         onUpdate?(.started(
             participants: localised(payload.participants),
             seed: payload.seed,
-            handSize: payload.handSize
+            cardsDealt: payload.cardsDealt
         ))
         deliverPendingActions()
     }

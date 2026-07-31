@@ -115,7 +115,13 @@ struct GameState: Codable, Sendable {
     var queensArePoisonous: Bool = false
 
     var dealerID: String
-    var handSize: Int
+    /// What the dealer called. Two of these become each player's well, so the
+    /// opening hand is `cardsDealt - Rules.wellSize`.
+    var cardsDealt: Int
+    /// Players who still have to bank two cards as their well, in the order
+    /// they choose. Non-empty only at the very start — play can't begin until
+    /// everyone has a well.
+    var wellSelectionQueue: [String] = []
     var firstEliminatedID: String?
     var winnerID: String?
 
@@ -133,6 +139,12 @@ struct GameState: Codable, Sendable {
     // MARK: Queries
 
     var currentPlayer: PlayerState { players[currentPlayerIndex] }
+
+    /// True while wells are still being chosen. Nothing else may happen yet.
+    var isChoosingWells: Bool { !wellSelectionQueue.isEmpty }
+
+    /// Whoever is picking their well right now.
+    var wellChooserID: String? { wellSelectionQueue.first }
 
     var activePlayers: [PlayerState] { players.filter { !$0.isEliminated } }
 

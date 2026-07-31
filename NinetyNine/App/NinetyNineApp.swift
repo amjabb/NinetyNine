@@ -16,7 +16,7 @@ struct NinetyNineApp: App {
             Records.shared.resetAll()
             Settings.shared.opponentCount = 2
             Settings.shared.difficulty = .sharp
-            Settings.shared.handSize = 6
+            Settings.shared.cardsDealt = 7
             Settings.shared.coachingEnabled = true
             Settings.shared.localPlayerCount = 3
             Settings.shared.localPlayerNames = []

@@ -30,7 +30,7 @@ struct RootView: View {
         var dealerName: String
         var isDealerHuman: Bool
         var playerCount: Int
-        var handSize: Int
+        var cardsDealt: Int
     }
 
     private enum Route: Equatable {
@@ -97,11 +97,11 @@ struct RootView: View {
                     dealerName: plan.dealerName,
                     isDealerHuman: plan.isDealerHuman,
                     playerCount: plan.playerCount,
-                    handSize: Binding(
-                        get: { nextDeal?.handSize ?? plan.handSize },
-                        set: { nextDeal?.handSize = $0 }
+                    cardsDealt: Binding(
+                        get: { nextDeal?.cardsDealt ?? plan.cardsDealt },
+                        set: { nextDeal?.cardsDealt = $0 }
                     ),
-                    onDeal: { startGame(dealerID: plan.dealerID, handSize: nextDeal?.handSize) },
+                    onDeal: { startGame(dealerID: plan.dealerID, cardsDealt: nextDeal?.cardsDealt) },
                     onCancel: { go(.home) }
                 )
                 .id("nextdeal")
@@ -157,7 +157,7 @@ struct RootView: View {
     /// show them the prompt instead of silently re-dealing the previous setup.
     private func planNextDeal(after viewModel: GameViewModel) {
         let playerCount = viewModel.participants.count
-        let maxHand = Rules.maxHandSize(forPlayerCount: playerCount)
+        let maxHand = Rules.maxCardsDealt(forPlayerCount: playerCount)
 
         guard let dealer = viewModel.nextDealer else {
             startGame()
@@ -166,9 +166,9 @@ struct RootView: View {
         let isHuman = dealer.kind.isLocalHuman
         let chosen: Int
         if let difficulty = dealer.kind.difficulty {
-            chosen = AIPlayer(difficulty: difficulty).preferredHandSize(maxHandSize: maxHand)
+            chosen = AIPlayer(difficulty: difficulty).preferredDeal(maxCardsDealt: maxHand)
         } else {
-            chosen = min(max(Settings.shared.handSize, Rules.minHandSize), maxHand)
+            chosen = min(max(Settings.shared.cardsDealt, Rules.minCardsDealt), maxHand)
         }
 
         nextDeal = NextDealPlan(
@@ -176,22 +176,22 @@ struct RootView: View {
             dealerName: isHuman ? dealer.name : dealer.name,
             isDealerHuman: isHuman,
             playerCount: playerCount,
-            handSize: chosen
+            cardsDealt: chosen
         )
         go(.nextDeal)
     }
 
-    private func startGame(dealerID: String? = nil, handSize overrideHandSize: Int? = nil) {
+    private func startGame(dealerID: String? = nil, cardsDealt overrideDeal: Int? = nil) {
         let settings = Settings.shared
 
         // Validate the deal *before* routing, so a bad configuration surfaces as
         // an explanation on the setup screen instead of a broken table.
         let playerCount = mode == .solo ? settings.opponentCount + 1 : settings.localPlayerCount
-        let handSize = min(
-            max(overrideHandSize ?? settings.handSize, Rules.minHandSize),
-            Rules.maxHandSize(forPlayerCount: playerCount)
+        let cardsDealt = min(
+            max(overrideDeal ?? settings.cardsDealt, Rules.minCardsDealt),
+            Rules.maxCardsDealt(forPlayerCount: playerCount)
         )
-        guard GameViewModel.canDeal(playerCount: playerCount, handSize: handSize) else {
+        guard GameViewModel.canDeal(playerCount: playerCount, cardsDealt: cardsDealt) else {
             setupFailure = "That table needs more cards than a 52-card deck has. Try fewer players or a smaller hand."
             return
         }
@@ -201,7 +201,7 @@ struct RootView: View {
             activeGame = .solo(
                 difficulty: settings.difficulty,
                 opponentCount: settings.opponentCount,
-                handSize: handSize,
+                cardsDealt: cardsDealt,
                 playerName: settings.playerName,
                 dealerID: dealerID,
                 seed: UITestSeed.value
@@ -209,15 +209,15 @@ struct RootView: View {
         case .passAndPlay:
             activeGame = .passAndPlay(
                 playerNames: settings.resolvedLocalPlayerNames,
-                handSize: handSize,
+                cardsDealt: cardsDealt,
                 dealerID: dealerID
             )
         case .online:
-            startOnlineGame(handSize: handSize)
+            startOnlineGame(cardsDealt: cardsDealt)
             return
         }
         // Remember the dealer's choice so the next setup screen opens on it.
-        settings.handSize = handSize
+        settings.cardsDealt = cardsDealt
         gameSeed += 1
         go(.game)
     }
@@ -226,7 +226,7 @@ struct RootView: View {
     /// async and can fail in ways the other modes can't — declined sign-in, a
     /// cancelled matchmaker, no network. Each surfaces as an explanation rather
     /// than a dead button.
-    private func startOnlineGame(handSize: Int) {
+    private func startOnlineGame(cardsDealt: Int) {
         Task {
             guard GameCenterSession.shared.canPlayOnline else {
                 setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
@@ -237,7 +237,7 @@ struct RootView: View {
                 let match = try await transport.findMatch(
                     minPlayers: 2,
                     maxPlayers: min(6, Settings.shared.opponentCount + 1),
-                    handSize: handSize
+                    cardsDealt: cardsDealt
                 )
                 let online = GameKitTransport(match: match)
                 activeGame = .online(transport: online)

@@ -143,7 +143,7 @@ final class GameViewModel: ObservableObject {
     static func solo(
         difficulty: Difficulty,
         opponentCount: Int,
-        handSize: Int,
+        cardsDealt: Int,
         playerName: String,
         dealerID: String? = nil,
         seed: UInt32? = nil
@@ -159,7 +159,7 @@ final class GameViewModel: ObservableObject {
             participants: participants,
             mode: .solo,
             difficulty: difficulty,
-            handSize: handSize,
+            cardsDealt: cardsDealt,
             dealerID: dealerID,
             seed: seed,
             recordedPlayerID: "human"
@@ -169,7 +169,7 @@ final class GameViewModel: ObservableObject {
     /// Pass-and-play: several humans sharing this device.
     static func passAndPlay(
         playerNames: [String],
-        handSize: Int,
+        cardsDealt: Int,
         dealerID: String? = nil,
         seed: UInt32? = nil
     ) -> GameViewModel {
@@ -184,7 +184,7 @@ final class GameViewModel: ObservableObject {
             participants: participants,
             mode: .passAndPlay,
             difficulty: .sharp,
-            handSize: handSize,
+            cardsDealt: cardsDealt,
             dealerID: dealerID,
             seed: seed,
             recordedPlayerID: nil
@@ -227,7 +227,7 @@ final class GameViewModel: ObservableObject {
         participants: [MatchParticipant],
         mode: MatchCoordinator.MatchMode,
         difficulty: Difficulty,
-        handSize: Int,
+        cardsDealt: Int,
         dealerID: String?,
         seed: UInt32?,
         recordedPlayerID: String?,
@@ -249,7 +249,7 @@ final class GameViewModel: ObservableObject {
             localPlayerID: seated.first { $0.kind.isLocalHuman }?.id ?? seated[0].id,
             participants: seated,
             seed: seed ?? UInt32.random(in: 0...UInt32.max),
-            handSize: handSize
+            cardsDealt: cardsDealt
         )
         // Pacing lives in the view model, not the coordinator — otherwise two
         // systems fight over when an opponent's move is allowed to appear.
@@ -265,9 +265,9 @@ final class GameViewModel: ObservableObject {
 
     /// Validate a configuration without starting it, so an impossible table is
     /// caught on the setup screen rather than on a broken game screen.
-    static func canDeal(playerCount: Int, handSize: Int) -> Bool {
+    static func canDeal(playerCount: Int, cardsDealt: Int) -> Bool {
         guard (2...6).contains(playerCount) else { return false }
-        return handSize >= Rules.minHandSize && handSize <= Rules.maxHandSize(forPlayerCount: playerCount)
+        return cardsDealt >= Rules.minCardsDealt && cardsDealt <= Rules.maxCardsDealt(forPlayerCount: playerCount)
     }
 
     private static func opponentNames(for difficulty: Difficulty) -> [String] {

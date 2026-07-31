@@ -154,16 +154,26 @@ enum Rules {
     /// left unable to hold a card at all.
     static let poisonedHandCapFloor = 1
 
-    // MARK: Hand-size limits
+    // MARK: What the dealer deals
 
-    /// Each player needs `handSize` cards plus a 2-card well, and the dealer may
-    /// spend the whole deck: players * (handSize + 2) <= 52.
-    static func maxHandSize(forPlayerCount count: Int) -> Int {
-        let uncapped = (52 / max(1, count)) - 2
-        return max(minHandSize, min(12, uncapped))
+    /// Cards set aside face-down as the well, chosen by the player from their
+    /// own deal.
+    static let wellSize = 2
+
+    /// The dealer names a number of cards to deal. **Two of them become the
+    /// well**, so the opening hand is `cardsDealt - 2` — deal 7 and you start
+    /// with five in hand, deal 5 and you start with three and draw up to five on
+    /// your first turn.
+    ///
+    /// This is why the number isn't called "hand size": it stopped being one.
+    static func maxCardsDealt(forPlayerCount count: Int) -> Int {
+        let uncapped = 52 / max(1, count)
+        return max(minCardsDealt, min(12, uncapped))
     }
 
-    static let minHandSize = 5
+    /// Two go to the well, so three is the smallest deal that leaves a hand at
+    /// all. Anything less and a player opens holding nothing.
+    static let minCardsDealt = wellSize + 1
 
     // MARK: Core resolution
 

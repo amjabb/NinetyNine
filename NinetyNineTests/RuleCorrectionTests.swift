@@ -12,11 +12,13 @@ import XCTest
 
 final class HandCapTests: XCTestCase {
 
-    private func engine(handSize: Int, seed: UInt32 = 4242) throws -> GameEngine {
-        try GameEngine(
+    private func engine(cardsDealt: Int, seed: UInt32 = 4242) throws -> GameEngine {
+        let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: handSize, seed: seed
+            dealerIndex: 1, cardsDealt: cardsDealt, seed: seed
         )
+        engine._finishWellSelectionForTesting()
+        return engine
     }
 
     /// The bug: hand cap was set to the deal size, so a 12-card deal refilled to
@@ -24,25 +26,40 @@ final class HandCapTests: XCTestCase {
     /// allowance — the rulebook's poisoned-queen sequence "5 → 4 → 3" only makes
     /// sense if the base cap is five.
     func testHandCapIsAlwaysFiveRegardlessOfDealSize() throws {
-        for handSize in [5, 6, 8, 12] {
-            let engine = try engine(handSize: handSize)
+        var checked = 0
+        for cardsDealt in [5, 6, 8, 12] {
+            let engine = try engine(cardsDealt: cardsDealt)
+            // The opening top-up draws from the deck, so it can turn up a queen
+            // and poison everyone before a card is played. That is the rule
+            // working, but it moves the caps — so those deals aren't what this
+            // test is measuring.
+            guard !engine.state.queensArePoisonous else { continue }
+            checked += 1
+
+            let leader = engine.state.currentPlayer.id
             for player in engine.state.players {
                 XCTAssertEqual(
                     player.handCap, 5,
-                    "Dealt \(handSize) — cap should still be 5"
+                    "Dealt \(cardsDealt) — cap should still be 5"
                 )
+                // Two of the deal went to the well. Whoever leads has already
+                // been topped up to the cap; nobody else has yet.
+                let expected = player.id == leader
+                    ? max(cardsDealt - Rules.wellSize, Rules.sustainingHandCap)
+                    : cardsDealt - Rules.wellSize
                 XCTAssertEqual(
-                    player.hand.count, handSize,
-                    "Dealt \(handSize) — the opening hand should be that size"
+                    player.hand.count, expected,
+                    "Dealt \(cardsDealt) — opening hand should be \(expected)"
                 )
             }
         }
+        XCTAssertGreaterThan(checked, 0, "Every deal poisoned queens — the test measured nothing")
     }
 
     func testALargeHandPlaysDownToFiveAndHoldsThere() throws {
-        let engine = try engine(handSize: 9)
+        let engine = try engine(cardsDealt: 9)
         let me = engine.state.currentPlayer.id
-        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 9)
+        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 7, "Nine dealt, two banked")
 
         // Play until the hand reaches the cap, then confirm it stops falling.
         var counts: [Int] = []
@@ -83,7 +100,7 @@ final class HandCapTests: XCTestCase {
     }
 
     func testRefillTopsUpToFiveButNeverRemovesCards() throws {
-        let engine = try engine(handSize: 5)
+        let engine = try engine(cardsDealt: 7)
         let me = engine.state.currentPlayer.id
         // Play one card; the refill should bring it straight back to five.
         let playable = try XCTUnwrap(
@@ -100,7 +117,7 @@ final class HandCapTests: XCTestCase {
     func testEachPoisonedQueenCostsACardOfCapacity() throws {
         var state = GameState(
             players: [PlayerState(id: "a", name: "A", kind: .human, handCap: Rules.sustainingHandCap)],
-            currentPlayerIndex: 0, dealerID: "a", handSize: 5
+            currentPlayerIndex: 0, dealerID: "a", cardsDealt: 5
         )
         XCTAssertEqual(state.players[0].handCap, 5)
         for expected in [4, 3, 2, 1, 1] {
@@ -122,8 +139,9 @@ final class PoisonedQueenTests: XCTestCase {
         for seed in UInt32(1)...400 {
             let engine = try GameEngine(
                 seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual)), ("c", "C", .ai(.casual))],
-                dealerIndex: 2, handSize: 8, seed: seed
+                dealerIndex: 2, cardsDealt: 8, seed: seed
             )
+            engine._finishWellSelectionForTesting()
             var guardCount = 0
             while !engine.state.isOver && !engine.state.queensArePoisonous && guardCount < 200 {
                 guardCount += 1
@@ -181,8 +199,9 @@ final class PoisonedQueenTests: XCTestCase {
     func testPoisonSnackooClearsThreeAndDrawsThree() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 909
+            dealerIndex: 1, cardsDealt: 5, seed: 909
         )
+        engine._finishWellSelectionForTesting()
         // Force three exiled queens onto the player.
         let seat = try XCTUnwrap(engine.state.index(of: "a"))
         let before = engine.state.players[seat].hand.count
@@ -210,8 +229,9 @@ final class WellChoiceTests: XCTestCase {
         // Find a position where a player is genuinely stuck, so the well is legal.
         let engine = try GameEngine(
             seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual))],
-            dealerIndex: 1, handSize: 6, seed: seed
+            dealerIndex: 1, cardsDealt: 6, seed: seed
         )
+        engine._finishWellSelectionForTesting()
         var guardCount = 0
         while !engine.state.isOver && guardCount < 300 {
             guardCount += 1
@@ -363,8 +383,9 @@ final class WellSnackooRescueTests: XCTestCase {
     private func stuckWithTrio() throws -> (GameEngine, String, Rank) {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 31337
+            dealerIndex: 1, cardsDealt: 5, seed: 31337
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
 
@@ -450,8 +471,9 @@ final class WellSnackooRescueTests: XCTestCase {
         // The rescue must not accidentally spare everyone.
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 31337
+            dealerIndex: 1, cardsDealt: 5, seed: 31337
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
         seeded.tally = 99
@@ -507,7 +529,7 @@ final class CardSetTests: XCTestCase {
         for index in 1..<players {
             seats.append(PlayerState(id: "p\(index)", name: "P\(index)", kind: .ai(.sharp), handCap: 5))
         }
-        var state = GameState(players: seats, currentPlayerIndex: 0, dealerID: "a", handSize: 5)
+        var state = GameState(players: seats, currentPlayerIndex: 0, dealerID: "a", cardsDealt: 5)
         state.tally = tally
         return state
     }
@@ -612,8 +634,9 @@ final class CardSetTests: XCTestCase {
     func testPlayingASetCountsAsOnePlayAndDiscardsEveryCard() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 4242
+            dealerIndex: 1, cardsDealt: 5, seed: 4242
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
         let set = cards(.three, [.spades, .hearts, .clubs])

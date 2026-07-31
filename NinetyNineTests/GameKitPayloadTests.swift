@@ -19,7 +19,7 @@ final class GameKitPayloadTests: XCTestCase {
     private func payload(actions: [SubmittedAction] = []) -> GameKitTransport.MatchPayload {
         GameKitTransport.MatchPayload(
             seed: 20260730,
-            handSize: 7,
+            cardsDealt: 7,
             participantIDs: ["G:1", "G:2", "G:3"],
             participantNames: ["Ada", "Bo", "Cy"],
             actions: actions
@@ -38,7 +38,7 @@ final class GameKitPayloadTests: XCTestCase {
         let decoded = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
 
         XCTAssertEqual(decoded.seed, original.seed)
-        XCTAssertEqual(decoded.handSize, original.handSize)
+        XCTAssertEqual(decoded.cardsDealt, original.cardsDealt)
         XCTAssertEqual(decoded.participantIDs, original.participantIDs)
         XCTAssertEqual(decoded.actions, original.actions)
     }
@@ -49,8 +49,9 @@ final class GameKitPayloadTests: XCTestCase {
     func testPayloadContainsNoCardIdentities() throws {
         let engine = try GameEngine(
             seats: [("G:1", "Ada", .human), ("G:2", "Bo", .human)],
-            dealerIndex: 1, handSize: 7, seed: 20260730
+            dealerIndex: 1, cardsDealt: 7, seed: 20260730
         )
+        engine._finishWellSelectionForTesting()
         // Record a few real moves.
         var actions: [SubmittedAction] = []
         var sequence = 0
@@ -78,7 +79,7 @@ final class GameKitPayloadTests: XCTestCase {
         let mirror = Mirror(reflecting: payload())
         let fields = Set(mirror.children.compactMap(\.label))
         XCTAssertEqual(
-            fields, ["seed", "handSize", "participantIDs", "participantNames", "actions"],
+            fields, ["seed", "cardsDealt", "participantIDs", "participantNames", "actions"],
             "A new payload field could leak hidden state — review before adding one"
         )
         XCTAssertFalse(json.contains("\"hand\""), "The payload must not carry hands")
@@ -90,8 +91,9 @@ final class GameKitPayloadTests: XCTestCase {
     func testAFullGameFitsInsideGameKitsMatchDataLimit() throws {
         let engine = try GameEngine(
             seats: [("G:1", "Ada", .ai(.sharp)), ("G:2", "Bo", .ai(.ruthless))],
-            dealerIndex: 1, handSize: 7, seed: 4242
+            dealerIndex: 1, cardsDealt: 7, seed: 4242
         )
+        engine._finishWellSelectionForTesting()
         var actions: [SubmittedAction] = []
         var sequence = 0
         var guardCount = 0
@@ -135,7 +137,8 @@ final class GameKitPayloadTests: XCTestCase {
             ("G:2", "Bo", .ai(.casual)),
             ("G:3", "Cy", .ai(.ruthless)),
         ]
-        let source = try GameEngine(seats: seats, dealerIndex: 2, handSize: 6, seed: 777)
+        let source = try GameEngine(seats: seats, dealerIndex: 2, cardsDealt: 6, seed: 777)
+        source._finishWellSelectionForTesting()
         var actions: [SubmittedAction] = []
         var sequence = 0
         var guardCount = 0
@@ -166,7 +169,8 @@ final class GameKitPayloadTests: XCTestCase {
         let data = try JSONEncoder().encode(payload(actions: actions))
         let received = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
 
-        let replay = try GameEngine(seats: seats, dealerIndex: 2, handSize: 6, seed: 777)
+        let replay = try GameEngine(seats: seats, dealerIndex: 2, cardsDealt: 6, seed: 777)
+        replay._finishWellSelectionForTesting()
         for action in received.actions { try replay.apply(action) }
 
         let encoder = JSONEncoder()
@@ -185,7 +189,8 @@ final class GameKitPayloadTests: XCTestCase {
         let seats: [(String, String, PlayerState.PlayerKind)] = [
             ("G:1", "Ada", .human), ("G:2", "Bo", .human),
         ]
-        let source = try GameEngine(seats: seats, dealerIndex: 1, handSize: 7, seed: 31337)
+        let source = try GameEngine(seats: seats, dealerIndex: 1, cardsDealt: 7, seed: 31337)
+        source._finishWellSelectionForTesting()
 
         // Force a hand that holds a run, so the test doesn't depend on the deal.
         var seeded = source.state
@@ -210,7 +215,8 @@ final class GameKitPayloadTests: XCTestCase {
         let received = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
         XCTAssertEqual(received.actions, [submitted], "The card IDs have to arrive in order")
 
-        let replay = try GameEngine(seats: seats, dealerIndex: 1, handSize: 7, seed: 31337)
+        let replay = try GameEngine(seats: seats, dealerIndex: 1, cardsDealt: 7, seed: 31337)
+        replay._finishWellSelectionForTesting()
         replay._replaceStateForTesting(seeded)
         for action in received.actions { try replay.apply(action) }
 

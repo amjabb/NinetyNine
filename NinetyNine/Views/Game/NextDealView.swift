@@ -20,14 +20,14 @@ struct NextDealView: View {
     /// rather than asking for one.
     let isDealerHuman: Bool
     let playerCount: Int
-    @Binding var handSize: Int
+    @Binding var cardsDealt: Int
     let onDeal: () -> Void
     let onCancel: () -> Void
 
     @Environment(\.motion) private var motion
     @State private var hasAppeared = false
 
-    private var maxHandSize: Int { Rules.maxHandSize(forPlayerCount: playerCount) }
+    private var maxHandSize: Int { Rules.maxCardsDealt(forPlayerCount: playerCount) }
 
     var body: some View {
         ZStack {
@@ -64,7 +64,7 @@ struct NextDealView: View {
 
                 VStack(spacing: 10) {
                     BrassButton(
-                        title: isDealerHuman ? "Deal \(handSize)" : "Continue",
+                        title: isDealerHuman ? "Deal \(cardsDealt)" : "Continue",
                         icon: "play.fill",
                         isProminent: true,
                         action: onDeal
@@ -81,7 +81,7 @@ struct NextDealView: View {
         .onAppear {
             // Clamp before showing — the previous game's size may be illegal at
             // this table size.
-            handSize = min(max(handSize, Rules.minHandSize), maxHandSize)
+            cardsDealt = min(max(cardsDealt, Rules.minCardsDealt), maxHandSize)
             withAnimation(motion.animation(Motion.drama)) { hasAppeared = true }
         }
         .transition(.opacity)
@@ -94,18 +94,18 @@ struct NextDealView: View {
             HStack {
                 Text("Cards each").labelStyle()
                 Spacer()
-                Text("\(handSize)")
+                Text("\(cardsDealt)")
                     .font(Typography.counter(22, weight: .heavy))
                     .foregroundStyle(Palette.brassLight)
             }
 
             HStack(spacing: 8) {
-                stepButton(icon: "minus", enabled: handSize > Rules.minHandSize) {
-                    handSize = max(Rules.minHandSize, handSize - 1)
+                stepButton(icon: "minus", enabled: cardsDealt > Rules.minCardsDealt) {
+                    cardsDealt = max(Rules.minCardsDealt, cardsDealt - 1)
                 }
                 track
-                stepButton(icon: "plus", enabled: handSize < maxHandSize) {
-                    handSize = min(maxHandSize, handSize + 1)
+                stepButton(icon: "plus", enabled: cardsDealt < maxHandSize) {
+                    cardsDealt = min(maxHandSize, cardsDealt + 1)
                 }
             }
 
@@ -128,17 +128,17 @@ struct NextDealView: View {
 
     private var track: some View {
         HStack(spacing: 3) {
-            ForEach(Rules.minHandSize...12, id: \.self) { value in
+            ForEach(Rules.minCardsDealt...12, id: \.self) { value in
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(value <= handSize
+                    .fill(value <= cardsDealt
                         ? AnyShapeStyle(Palette.brassFace)
                         : AnyShapeStyle(Color.white.opacity(value <= maxHandSize ? 0.12 : 0.04)))
-                    .frame(height: value <= handSize ? 20 : 13)
+                    .frame(height: value <= cardsDealt ? 20 : 13)
                     .frame(maxHeight: .infinity)
             }
         }
         .frame(height: 26)
-        .animation(Motion.panel, value: handSize)
+        .animation(Motion.panel, value: cardsDealt)
         .accessibilityHidden(true)
     }
 
@@ -173,7 +173,7 @@ struct NextDealView: View {
 
     private var aiChoice: some View {
         VStack(spacing: 6) {
-            Text("\(handSize)")
+            Text("\(cardsDealt)")
                 .font(Typography.tally(64))
                 .foregroundStyle(Palette.brassLight)
             Text("cards each")
@@ -190,7 +190,7 @@ struct NextDealView: View {
                 .strokeBorder(Palette.brassDeep.opacity(0.5), lineWidth: 1)
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(dealerName) deals \(handSize) cards each")
+        .accessibilityLabel("\(dealerName) deals \(cardsDealt) cards each")
     }
 }
 
@@ -199,7 +199,7 @@ struct NextDealView: View {
         dealerName: "Vale",
         isDealerHuman: false,
         playerCount: 3,
-        handSize: .constant(7),
+        cardsDealt: .constant(7),
         onDeal: {},
         onCancel: {}
     )

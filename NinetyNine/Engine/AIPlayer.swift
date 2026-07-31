@@ -294,26 +294,83 @@ struct AIPlayer {
         return "plays \(candidate.card.shortName)"
     }
 
+    // MARK: - Choosing a well
+
+    /// Which two cards to bank face-down.
+    ///
+    /// A well card is only ever turned over when its owner is already stuck, and
+    /// an unplayable one ends their game. So the question isn't "which cards are
+    /// worth most" — it's "which cards will still be legal when the tally is in
+    /// the eighties and a suit is probably locked". That favours cards that
+    /// don't push the total: a 10 or a King-after-100 goes *down*, a Jack and a
+    /// 4 are worth nothing, an Ace can be a 1, and a Queen can be anything.
+    ///
+    /// Which is also the tension: those are the same cards you want in hand.
+    /// Banking them buys insurance with your brakes, and the tiers disagree
+    /// about that trade.
+    func chooseWell(from hand: [Card], size: Int = Rules.wellSize) -> [Int] {
+        guard hand.count > size else { return hand.map(\.id) }
+
+        let ranked = hand.sorted { rescueValue(of: $0) > rescueValue(of: $1) }
+        switch difficulty {
+        case .ruthless:
+            // Keeps its brakes in hand where it can steer with them, and banks
+            // the next best thing. Being stuck is a risk it plays around rather
+            // than insures against.
+            let keepBack = min(2, ranked.count - size)
+            return Array(ranked.dropFirst(keepBack).prefix(size)).map(\.id)
+        case .sharp:
+            // Insures properly: the two safest cards go in the well.
+            return Array(ranked.prefix(size)).map(\.id)
+        case .casual:
+            // Banks by gut feel — the two it likes least, which is roughly the
+            // highest cards, and roughly wrong.
+            let byValue = hand.sorted { faceValue($0.rank) > faceValue($1.rank) }
+            return Array(byValue.prefix(size)).map(\.id)
+        }
+    }
+
+    /// How likely this card is to still be playable when you're desperate.
+    private func rescueValue(of card: Card) -> Int {
+        switch card.rank {
+        case .queen: return 100  // wild for rank *and* suit — never blocked
+        case .jack: return 80    // worth nothing, so it can't bust
+        case .four: return 78    // also nothing, and it reverses
+        case .ten: return 74     // takes the tally down
+        case .ace: return 70     // can be a 1
+        case .king: return 20
+        default: return 40 - faceValue(card.rank)
+        }
+    }
+
+    /// Printed value, for the tiers that judge a card by how big it looks.
+    private func faceValue(_ rank: Rank) -> Int {
+        Int(rank.rawValue) ?? 10
+    }
+
     // MARK: - Dealing
 
     /// How many cards this opponent deals when it wins the deal.
     ///
-    /// Now that the sustaining cap is five, the deal size is an *opening*
-    /// position rather than a standing allowance — a big deal is a temporary
-    /// cushion that decays. So the tiers use it in character: ruthless deals
-    /// tight to strangle the opening, casual deals generously because it's more
-    /// fun that way.
-    func preferredHandSize(maxHandSize: Int) -> Int {
-        let low = Rules.minHandSize
-        let high = max(low, maxHandSize)
+    /// The number buys two things now, and the second is the interesting one:
+    /// the opening hand (`dealt - 2`, which decays to the cap of five anyway),
+    /// and **how much choice everyone gets over their well**. Deal three and a
+    /// player banks two of three — no choice at all. Deal nine and they pick the
+    /// two they actually want.
+    ///
+    /// So a tight deal isn't just a small hand, it's a denial of a decision.
+    /// Ruthless deals tight for exactly that reason; casual deals generously
+    /// because it's more fun that way.
+    func preferredDeal(maxCardsDealt: Int) -> Int {
+        let low = Rules.minCardsDealt
+        let high = max(low, maxCardsDealt)
+        let wanted: Int
         switch difficulty {
-        case .casual:
-            return min(high, low + 3)
-        case .sharp:
-            return min(high, low + 1)
-        case .ruthless:
-            return low
+        case .casual: wanted = 9    // a hand of seven and a real pick
+        case .sharp: wanted = 7     // a full hand of five
+        case .ruthless: wanted = 5  // a hand of three, and a thin choice
         }
+        return min(high, max(low, wanted))
     }
 
     // MARK: - Pacing

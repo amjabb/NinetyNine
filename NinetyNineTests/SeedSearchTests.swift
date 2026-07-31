@@ -19,7 +19,7 @@ final class SeedSearchTests: XCTestCase {
     /// The table SetPlayUITests launches: two opponents, Sharp, a 6-card deal.
     private func openingHand(seed: UInt32) async -> PlayerView? {
         let model = GameViewModel.solo(
-            difficulty: .sharp, opponentCount: 2, handSize: 6,
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 6,
             playerName: "You", dealerID: nil, seed: seed
         )
         await model.begin()

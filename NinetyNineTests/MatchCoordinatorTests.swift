@@ -32,14 +32,14 @@ final class MatchCoordinatorTests: XCTestCase {
         ais: Int,
         mode: MatchCoordinator.MatchMode,
         seed: UInt32 = 2024,
-        handSize: Int = 6
+        cardsDealt: Int = 6
     ) -> (MatchCoordinator, LoopbackTransport) {
         let people = participants(humans: humans, ais: ais)
         let transport = LoopbackTransport(
             localPlayerID: people[0].id,
             participants: people,
             seed: seed,
-            handSize: handSize
+            cardsDealt: cardsDealt
         )
         return (MatchCoordinator(transport: transport, mode: mode), transport)
     }
@@ -241,7 +241,7 @@ final class MatchCoordinatorTests: XCTestCase {
     func testAParticipantLeavingForfeitsTheirSeat() async throws {
         let people = participants(humans: 1, ais: 2)
         let transport = LoopbackTransport(
-            localPlayerID: "h0", participants: people, seed: 99, handSize: 6
+            localPlayerID: "h0", participants: people, seed: 99, cardsDealt: 6
         )
         let match = MatchCoordinator(transport: transport, mode: .online)
         try await match.start()
@@ -282,9 +282,12 @@ final class MatchCoordinatorTests: XCTestCase {
         let replay = try GameEngine(
             seats: match.participants.map { ($0.id, $0.name, $0.enginePlayerKind) },
             dealerIndex: match.participants.count - 1,
-            handSize: 6,
+            cardsDealt: 6,
             seed: 8888
         )
+        // No shortcut here: the coordinator logs each player's well choice as a
+        // real action, so replaying the log has to reproduce that too. Skipping
+        // ahead would hide exactly the desync this test exists to catch.
         for entry in match.actionLog { try replay.apply(entry) }
 
         XCTAssertEqual(replay.state.tally, match.view?.tally, "Replay diverged from the live match")

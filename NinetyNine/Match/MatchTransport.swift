@@ -44,7 +44,7 @@ struct MatchParticipant: Identifiable, Codable, Hashable, Sendable {
 /// What a transport tells the game about.
 enum MatchUpdate: Sendable {
     /// The match is ready; deal with this seating and seed.
-    case started(participants: [MatchParticipant], seed: UInt32, handSize: Int)
+    case started(participants: [MatchParticipant], seed: UInt32, cardsDealt: Int)
     /// A participant submitted a move.
     case action(SubmittedAction)
     /// A participant left. The engine treats this as a forfeit.
@@ -103,7 +103,7 @@ final class LoopbackTransport: MatchTransport {
 
     private let participants: [MatchParticipant]
     private let seed: UInt32
-    private let handSize: Int
+    private let cardsDealt: Int
 
     /// Artificial delay applied to every delivery, for exercising the UI against
     /// a transport that isn't instant.
@@ -119,18 +119,18 @@ final class LoopbackTransport: MatchTransport {
         localPlayerID: String,
         participants: [MatchParticipant],
         seed: UInt32,
-        handSize: Int
+        cardsDealt: Int
     ) {
         self.localPlayerID = localPlayerID
         self.participants = participants
         self.seed = seed
-        self.handSize = handSize
+        self.cardsDealt = cardsDealt
     }
 
     func start() async throws {
         guard !hasStarted else { return }
         hasStarted = true
-        onUpdate?(.started(participants: participants, seed: seed, handSize: handSize))
+        onUpdate?(.started(participants: participants, seed: seed, cardsDealt: cardsDealt))
     }
 
     func send(_ action: SubmittedAction) async throws {

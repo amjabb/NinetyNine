@@ -78,7 +78,7 @@ struct PlayerView: Codable, Sendable {
     var drawPileCount: Int
 
     var dealerID: String
-    var handSize: Int
+    var cardsDealt: Int
     var winnerID: String?
     var firstEliminatedID: String?
 
@@ -123,7 +123,7 @@ extension GameState {
             yourHand: you?.hand ?? [],
             yourWellCount: you?.well.count ?? 0,
             yourPoisonPile: you?.poisonPile ?? [],
-            yourHandCap: you?.handCap ?? handSize,
+            yourHandCap: you?.handCap ?? cardsDealt,
             youOweExtraPlay: you?.owesExtraPlay ?? false,
             youAreEliminated: you?.isEliminated ?? false,
             opponents: players
@@ -153,7 +153,7 @@ extension GameState {
             discardPile: discardPile,
             drawPileCount: drawPile.count,
             dealerID: dealerID,
-            handSize: handSize,
+            cardsDealt: cardsDealt,
             winnerID: winnerID,
             firstEliminatedID: firstEliminatedID,
             playsRemainingThisTurn: playsRemainingThisTurn,
@@ -195,7 +195,7 @@ extension PlayerView {
                     id: id,
                     name: other?.name ?? id,
                     kind: (other?.isAI ?? false) ? .ai(.sharp) : .human,
-                    handCap: other?.handCap ?? handSize
+                    handCap: other?.handCap ?? cardsDealt
                 )
                 them.well = Array(repeating: Card(id: -1, rank: .jack, suit: .spades),
                                   count: other?.wellCount ?? 0)
@@ -205,7 +205,7 @@ extension PlayerView {
             },
             currentPlayerIndex: seatingOrder.firstIndex(of: currentPlayerID) ?? 0,
             dealerID: dealerID,
-            handSize: handSize
+            cardsDealt: cardsDealt
         )
         reconstructed.tally = tally
         reconstructed.direction = direction

@@ -17,7 +17,14 @@ final class Settings: ObservableObject {
     }
     @AppStorage("settings.difficulty") var difficulty: Difficulty = .sharp
     @AppStorage("settings.opponents") var opponentCount: Int = 2
-    @AppStorage("settings.handSize") var handSize: Int = 6
+    /// How many cards the dealer deals — *including* the two each player banks
+    /// as their well. Deal 7 and you open with five in hand.
+    ///
+    /// The storage key deliberately changed with the meaning: the old
+    /// "settings.handSize" held a number that counted only the hand, and
+    /// silently reusing it would have quietly shrunk everyone's opening hand by
+    /// two.
+    @AppStorage("settings.cardsDealt") var cardsDealt: Int = 7
     @AppStorage("settings.playerName") var playerName: String = "You"
     /// Shows the running "why is this illegal" coaching on dead cards.
     @AppStorage("settings.coaching") var coachingEnabled: Bool = true
@@ -50,9 +57,9 @@ final class Settings: ObservableObject {
     }
 
     /// Hand-size ceiling for the pass-and-play table.
-    func validLocalHandSize() -> Int {
-        let maximum = Rules.maxHandSize(forPlayerCount: localPlayerCount)
-        return min(max(handSize, Rules.minHandSize), maximum)
+    func validLocalDeal() -> Int {
+        let maximum = Rules.maxCardsDealt(forPlayerCount: localPlayerCount)
+        return min(max(cardsDealt, Rules.minCardsDealt), maximum)
     }
 
     private init() {
@@ -62,9 +69,9 @@ final class Settings: ObservableObject {
 
     /// Clamp the stored hand size into the range the current table allows —
     /// switching from 2 opponents to 5 can invalidate a previously fine choice.
-    func validHandSize() -> Int {
+    func validDeal() -> Int {
         let players = opponentCount + 1
-        let maximum = Rules.maxHandSize(forPlayerCount: players)
-        return min(max(handSize, Rules.minHandSize), maximum)
+        let maximum = Rules.maxCardsDealt(forPlayerCount: players)
+        return min(max(cardsDealt, Rules.minCardsDealt), maximum)
     }
 }
