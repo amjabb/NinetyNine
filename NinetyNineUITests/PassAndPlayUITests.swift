@@ -65,21 +65,44 @@ final class PassAndPlayUITests: XCTestCase {
     func test03_PlayingAPassAndPlayGameCoversTheScreenBetweenPlayers() throws {
         startTwoPlayerGame(firstName: "Ada", secondName: "Bo")
 
-        // The very first turn is behind a hand-off too — otherwise the deal is
-        // face up in front of everyone.
+        // The deal itself is now private: each player picks two of their own
+        // cards for their well, so their hand is on screen before anyone has
+        // played. That has to be behind a hand-off like everything else.
         // BrassButton composes its accessibility label from title + subtitle,
         // so match on the prefix rather than the bare title.
         let firstPrompt = handoffButton(for: "Ada")
         XCTAssertTrue(
             firstPrompt.waitForExistence(timeout: 10),
-            "Even the opening hand should be behind a hand-off"
+            "Even the opening deal should be behind a hand-off"
         )
-        // Nothing about the game may be visible while the screen is covered.
-        XCTAssertFalse(app.otherElements["Tally"].isHittable, "The table must be covered")
+        XCTAssertFalse(
+            app.otherElements["well-selection"].isHittable,
+            "Ada's dealt cards must be covered until she's holding the device"
+        )
         shot("pp-1-handoff")
 
         firstPrompt.tap()
-        XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buildOneWell(), "Ada should be asked to build her well")
+
+        // And Bo's deal must be covered from Ada in turn.
+        let boPrompt = handoffButton(for: "Bo")
+        XCTAssertTrue(
+            boPrompt.waitForExistence(timeout: 10),
+            "Bo's deal should be behind his own hand-off"
+        )
+        XCTAssertFalse(
+            app.otherElements["well-selection"].isHittable,
+            "Bo's dealt cards must not be visible to Ada"
+        )
+        boPrompt.tap()
+        XCTAssertTrue(app.buildOneWell(), "Bo should be asked to build his well")
+
+        // Only now does play begin — behind one more hand-off.
+        let adasTurn = handoffButton(for: "Ada")
+        XCTAssertTrue(adasTurn.waitForExistence(timeout: 10), "Ada's turn needs a hand-off too")
+        XCTAssertFalse(app.otherElements["Tally"].isHittable, "The table must be covered")
+        adasTurn.tap()
+        XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 6))
         Thread.sleep(forTimeInterval: 1.6)
         shot("pp-2-first-player")
 
@@ -98,10 +121,11 @@ final class PassAndPlayUITests: XCTestCase {
     }
 
     func test04_EachPlayerSeesOnlyTheirOwnHand() throws {
-        startTwoPlayerGame(firstName: "Ada", secondName: "Bo")
+        startAndBuildWells(firstName: "Ada", secondName: "Bo")
 
-        handoffButton(for: "Ada").tap()
-        _ = app.otherElements["Tally"].waitForExistence(timeout: 5)
+        // buildAllWells leaves the device covered for whoever leads.
+        if handoffButton(for: "Ada").exists { handoffButton(for: "Ada").tap() }
+        _ = app.otherElements["Tally"].waitForExistence(timeout: 6)
         Thread.sleep(forTimeInterval: 1.8)
 
         let adasHand = Set(handCards.map(\.label))
@@ -125,7 +149,7 @@ final class PassAndPlayUITests: XCTestCase {
     }
 
     func test05_PassAndPlayReachesAWinnerNamedOnScreen() throws {
-        startTwoPlayerGame(firstName: "Ada", secondName: "Bo")
+        startAndBuildWells(firstName: "Ada", secondName: "Bo")
 
         // A two-handed game of 99 can run long once the deck starts recycling, and
         // each XCUITest query costs real time — so the budget is generous and the
@@ -148,6 +172,11 @@ final class PassAndPlayUITests: XCTestCase {
                 continue
             }
 
+            // A rematch deals again, so the well builder can reappear
+            // part-way through the loop.
+            if app.otherElements["well-selection"].isHittable {
+                if app.buildOneWell(timeout: 2) { continue }
+            }
             if resolveDeclarationSheetIfPresent() { continue }
             if pickAWellCardIfAsked() { continue }
             if app.staticTexts["No legal card"].exists {
@@ -207,6 +236,15 @@ final class PassAndPlayUITests: XCTestCase {
         setName(seat: 2, to: secondName)
 
         app.buttons["Deal"].tap()
+        // Deliberately stops here. Each seat still has to build a well, and each
+        // one sits behind its own hand-off — which is exactly what test03 is
+        // checking, so this must not quietly tap through them.
+    }
+
+    /// Get to a table: every seat builds a well, dismissing hand-offs on the way.
+    private func startAndBuildWells(firstName: String, secondName: String) {
+        startTwoPlayerGame(firstName: firstName, secondName: secondName)
+        app.buildAllWells()
     }
 
     private func setName(seat: Int, to name: String) {
@@ -272,23 +310,7 @@ final class PassAndPlayUITests: XCTestCase {
 
     @discardableResult
     private func resolveDeclarationSheetIfPresent() -> Bool {
-        let titles = ["One, or eleven?", "Name the suit", "What is she copying?", "The well delivered"]
-        guard titles.contains(where: { app.staticTexts[$0].exists }) else { return false }
-        for prefix in ["1, tally becomes", "11, tally becomes", "Lock the suit to"] {
-            let element = app.buttons
-                .matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
-        }
-        for button in app.buttons.allElementsBoundByIndex {
-            guard button.exists, button.isHittable else { continue }
-            if ["Back", "Pause"].contains(button.label) { continue }
-            button.tap()
-            return true
-        }
-        return false
+        app.resolveDeclarationSheet()
     }
 
     private func shot(_ name: String) {

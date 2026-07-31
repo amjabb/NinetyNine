@@ -294,26 +294,50 @@ struct AIPlayer {
         return "plays \(candidate.card.shortName)"
     }
 
+    // MARK: - Choosing a well
+
+    /// Which two positions to bank face-down.
+    ///
+    /// Deliberately ignorant of what the cards are, because the player is too:
+    /// the deal is face down while the well is chosen. An opponent that peeked
+    /// and banked its two safest cards would be cheating at the one decision
+    /// where nobody has any information — so this is a positional choice, and
+    /// the tiers differ only in *where* they reach, which is flavour rather than
+    /// advantage.
+    func chooseWellSlots(dealtCount: Int, size: Int = Rules.wellSize) -> [Int] {
+        guard dealtCount > size else { return Array(0..<max(0, dealtCount)) }
+        switch difficulty {
+        case .casual: return Array(0..<size)                       // off the top
+        case .sharp: return Array((dealtCount - size)..<dealtCount) // off the bottom
+        case .ruthless:                                             // from the middle
+            let start = max(0, (dealtCount - size) / 2)
+            return Array(start..<(start + size))
+        }
+    }
+
     // MARK: - Dealing
 
     /// How many cards this opponent deals when it wins the deal.
     ///
-    /// Now that the sustaining cap is five, the deal size is an *opening*
-    /// position rather than a standing allowance — a big deal is a temporary
-    /// cushion that decays. So the tiers use it in character: ruthless deals
-    /// tight to strangle the opening, casual deals generously because it's more
-    /// fun that way.
-    func preferredHandSize(maxHandSize: Int) -> Int {
-        let low = Rules.minHandSize
-        let high = max(low, maxHandSize)
+    /// The number buys two things now, and the second is the interesting one:
+    /// the opening hand (`dealt - 2`, which decays to the cap of five anyway),
+    /// and **how much choice everyone gets over their well**. Deal three and a
+    /// player banks two of three — no choice at all. Deal nine and they pick the
+    /// two they actually want.
+    ///
+    /// So a tight deal isn't just a small hand, it's a denial of a decision.
+    /// Ruthless deals tight for exactly that reason; casual deals generously
+    /// because it's more fun that way.
+    func preferredDeal(maxCardsDealt: Int) -> Int {
+        let low = Rules.minCardsDealt
+        let high = max(low, maxCardsDealt)
+        let wanted: Int
         switch difficulty {
-        case .casual:
-            return min(high, low + 3)
-        case .sharp:
-            return min(high, low + 1)
-        case .ruthless:
-            return low
+        case .casual: wanted = 9    // a hand of seven and a real pick
+        case .sharp: wanted = 7     // a full hand of five
+        case .ruthless: wanted = 5  // a hand of three, and a thin choice
         }
+        return min(high, max(low, wanted))
     }
 
     // MARK: - Pacing

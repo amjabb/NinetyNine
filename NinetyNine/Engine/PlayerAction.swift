@@ -23,6 +23,16 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// Play several cards of the same rank together. One play, one tally change.
     case playSet(cardIDs: [Int], declaration: Declaration)
 
+    /// Bank two of the cards you were dealt as your face-down well. Happens once
+    /// per player, before anyone plays.
+    ///
+    /// **Positions, not cards.** You choose your well without seeing any of your
+    /// deal, so you couldn't name a card if you wanted to — and the identities
+    /// must not travel: this action goes into the shared log that every peer
+    /// reads, and a well card stays hidden for the whole game. Slots are indices
+    /// into your dealt cards in their dealt order.
+    case chooseWell(slots: [Int])
+
     /// Turn over one of the player's two face-down well cards. `slot` is which
     /// one they chose — both are face down, so this leaks nothing; it is simply
     /// left-or-right. The authority still owns what the card turns out to be.
@@ -75,7 +85,9 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// forfeit are the exceptions.
     var requiresTurn: Bool {
         switch self {
-        case .snackoo, .forfeit: return false
+        // Choosing a well has its own running order, checked by the engine —
+        // it happens before anyone has a turn to be out of.
+        case .snackoo, .forfeit, .chooseWell: return false
         default: return true
         }
     }
@@ -104,6 +116,18 @@ extension GameEngine {
     func apply(_ submitted: SubmittedAction) throws -> [GameEvent] {
         let playerID = submitted.playerID
 
+        // Wells come first, always. Without this an out-of-order action from a
+        // peer could start the game for one client and not the others.
+        if state.isChoosingWells {
+            switch submitted.action {
+            case .chooseWell: break
+            // Quitting has to work at any moment, including before you've
+            // banked — otherwise one player leaving strands the rest.
+            case .forfeit: break
+            default: throw GameError.notChoosingWells
+            }
+        }
+
         if submitted.action.requiresTurn {
             guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         }
@@ -114,6 +138,9 @@ extension GameEngine {
 
         case .playSet(let cardIDs, let declaration):
             return try playSet(cardIDs: cardIDs, by: playerID, declaration: declaration)
+
+        case .chooseWell(let slots):
+            return try chooseWell(slots: slots, by: playerID)
 
         case .drawFromWell(let slot):
             return try drawFromWell(by: playerID, slot: slot)
@@ -149,6 +176,17 @@ extension GameEngine {
         }
 
         var actions: [PlayerAction] = []
+
+        // Nothing else can happen until every player has banked a well. The
+        // choice itself is a multi-select in the UI rather than something worth
+        // enumerating — every pair of held cards is legal — so this offers one
+        // concrete, legal default rather than an empty placeholder.
+        if state.isChoosingWells {
+            if state.wellChooserID == playerID, player.hand.count >= Rules.wellSize {
+                actions.append(.chooseWell(slots: Array(0..<Rules.wellSize)))
+            }
+            return actions
+        }
 
         // Off-turn actions first — these don't depend on whose turn it is.
         if Rules.canSnackooPoison(player) {

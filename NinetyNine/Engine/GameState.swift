@@ -106,6 +106,14 @@ struct GameState: Codable, Sendable {
     var drawPile: [Card] = []
 
     var suitLock: SuitLock?
+    /// True when the card currently face up on the pile was played as an 8
+    /// (including a Queen impersonating one).
+    ///
+    /// This is what lets an 8 of the wrong suit take over a lock: you may only
+    /// move the lock by playing an 8 *directly on* another 8. Once anything else
+    /// has landed on top, the lock is binding again and an off-suit 8 is as dead
+    /// as any other off-suit card.
+    var topPlayedAsEight: Bool = false
     /// True in the single slot right after the tally hits 100.
     var forcedNegativeNext: Bool = false
     /// Suit of a 9 played as the immediately-previous card — the only window
@@ -115,7 +123,13 @@ struct GameState: Codable, Sendable {
     var queensArePoisonous: Bool = false
 
     var dealerID: String
-    var handSize: Int
+    /// What the dealer called. Two of these become each player's well, so the
+    /// opening hand is `cardsDealt - Rules.wellSize`.
+    var cardsDealt: Int
+    /// Players who still have to bank two cards as their well, in the order
+    /// they choose. Non-empty only at the very start — play can't begin until
+    /// everyone has a well.
+    var wellSelectionQueue: [String] = []
     var firstEliminatedID: String?
     var winnerID: String?
 
@@ -133,6 +147,12 @@ struct GameState: Codable, Sendable {
     // MARK: Queries
 
     var currentPlayer: PlayerState { players[currentPlayerIndex] }
+
+    /// True while wells are still being chosen. Nothing else may happen yet.
+    var isChoosingWells: Bool { !wellSelectionQueue.isEmpty }
+
+    /// Whoever is picking their well right now.
+    var wellChooserID: String? { wellSelectionQueue.first }
 
     var activePlayers: [PlayerState] { players.filter { !$0.isEliminated } }
 

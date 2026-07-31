@@ -22,7 +22,9 @@ enum GameError: Error, LocalizedError, Equatable {
     case cannotSkipWhileRepayingDebt
     case snackooNotAvailable
     case invalidPlayerCount(Int)
-    case invalidHandSize(min: Int, max: Int)
+    case invalidDeal(min: Int, max: Int)
+    case notChoosingWells
+    case wrongWellSize(expected: Int)
 
     var errorDescription: String? {
         switch self {
@@ -36,7 +38,9 @@ enum GameError: Error, LocalizedError, Equatable {
         case .cannotSkipWhileRepayingDebt: return "You owe a play — you can't skip again."
         case .snackooNotAvailable: return "You don't have a Snackoo available."
         case .invalidPlayerCount(let n): return "99 is for 2–6 players (got \(n))."
-        case .invalidHandSize(let min, let max): return "Hand size must be \(min)–\(max)."
+        case .notChoosingWells: return "Wells have already been chosen."
+        case .wrongWellSize(let expected): return "Pick exactly \(expected) cards for your well."
+        case .invalidDeal(let min, let max): return "The deal must be \(min)–\(max) cards."
         }
     }
 }
@@ -50,20 +54,20 @@ final class GameEngine {
     /// - Parameters:
     ///   - seats: seating order, clockwise.
     ///   - dealerIndex: index into `seats`.
-    ///   - handSize: 5...`Rules.maxHandSize(forPlayerCount:)`.
+    ///   - cardsDealt: 5...`Rules.maxCardsDealt(forPlayerCount:)`.
     ///   - seed: pin for reproducible deals (tests, "replay seed").
     init(
         seats: [(id: String, name: String, kind: PlayerState.PlayerKind)],
         dealerIndex: Int,
-        handSize: Int,
+        cardsDealt: Int,
         seed: UInt32? = nil
     ) throws {
         guard (2...6).contains(seats.count) else {
             throw GameError.invalidPlayerCount(seats.count)
         }
-        let maxHand = Rules.maxHandSize(forPlayerCount: seats.count)
-        guard handSize >= Rules.minHandSize && handSize <= maxHand else {
-            throw GameError.invalidHandSize(min: Rules.minHandSize, max: maxHand)
+        let maxHand = Rules.maxCardsDealt(forPlayerCount: seats.count)
+        guard cardsDealt >= Rules.minCardsDealt && cardsDealt <= maxHand else {
+            throw GameError.invalidDeal(min: Rules.minCardsDealt, max: maxHand)
         }
 
         self.random = RandomSource(seed: seed)
@@ -78,15 +82,12 @@ final class GameEngine {
         let firstToReceive = (dealerIndex + 1) % count
         func takeTop() -> Card { deck.removeLast() }
 
-        for _ in 0..<handSize {
+        // Everything the dealer calls goes to the hand. The well comes *out* of
+        // it — each player chooses which two to bank before play begins, so at
+        // this point nobody has a well yet.
+        for _ in 0..<cardsDealt {
             for offset in 0..<count {
                 players[(firstToReceive + offset) % count].hand.append(takeTop())
-            }
-        }
-        // Then two face-down well cards each.
-        for _ in 0..<2 {
-            for offset in 0..<count {
-                players[(firstToReceive + offset) % count].well.append(takeTop())
             }
         }
 
@@ -95,7 +96,9 @@ final class GameEngine {
             currentPlayerIndex: (dealerIndex + 1) % count,
             drawPile: deck,
             dealerID: seats[dealerIndex].id,
-            handSize: handSize
+            cardsDealt: cardsDealt,
+            // Same order as the deal: the dealer's left banks first.
+            wellSelectionQueue: (0..<count).map { seats[(firstToReceive + $0) % count].id }
         )
 
         // Hands are dealt sorted for a calmer read; the engine never depends on
@@ -105,7 +108,7 @@ final class GameEngine {
         }
         state.turnStartedWithDebt = false
         state.playsRemainingThisTurn = 1
-        note("\(state.currentPlayer.name) leads.")
+        note("Dealt \(cardsDealt) each — two of them go to your well.")
     }
 
     /// Rank-then-suit ordering, aces low. Keeps a hand readable at a glance.
@@ -135,6 +138,7 @@ final class GameEngine {
     @discardableResult
     func play(cardID: Int, by playerID: String, declaration: Declaration) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID),
               let handIndex = state.players[seat].hand.firstIndex(where: { $0.id == cardID })
@@ -163,6 +167,11 @@ final class GameEngine {
 
         state.tally = effect.newTally
         state.discardPile.append(card)
+        // Whether the *new* face-up card counts as an 8 — which is what decides
+        // if the next player may take the lock over with an off-suit 8. A Queen
+        // declared as an 8 counts, so she can be used to seize a lock and then
+        // hand the same opportunity on.
+        state.topPlayedAsEight = effect.effectiveRank == .eight
         events.append(.cardPlayed(card: card, by: playerID, effect: effect))
 
         if state.forcedNegativeNext {
@@ -218,6 +227,7 @@ final class GameEngine {
     @discardableResult
     func playSet(cardIDs: [Int], by playerID: String, declaration: Declaration) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
 
@@ -338,6 +348,84 @@ final class GameEngine {
 
     // MARK: - Turn flow
 
+    #if DEBUG
+    /// Bank the first two cards for everyone still owing a well.
+    ///
+    /// Most tests are about what happens *after* the deal, and making each of
+    /// them walk the selection queue by hand would bury the thing they're
+    /// actually asserting. Tests that care about the choice itself call
+    /// `chooseWell` properly.
+    func _finishWellSelectionForTesting() {
+        while let chooser = state.wellChooserID, let seat = state.index(of: chooser) {
+            guard state.players[seat].hand.count >= Rules.wellSize else {
+                state.wellSelectionQueue.removeFirst()
+                continue
+            }
+            _ = try? chooseWell(slots: Array(0..<Rules.wellSize), by: chooser)
+        }
+    }
+    #endif
+
+    // MARK: - Choosing a well
+
+    /// Bank two of your dealt cards face-down as your well. Everyone does this
+    /// once, before the first card is played.
+    ///
+    /// The cards leave the hand rather than being drawn separately, which is the
+    /// point of the rule: what you bank is what you give up holding. And it's
+    /// **blind** — you pick two positions out of a face-down deal, so the well
+    /// stays a real unknown until you're forced to turn one over. Seeing them
+    /// would tell you your outs from the first turn and flatten the one moment
+    /// the well exists for.
+    ///
+    /// Positions rather than card IDs for a second reason: this action goes into
+    /// the shared log every peer reads, and a well card must stay hidden for the
+    /// whole game.
+    @discardableResult
+    func chooseWell(slots: [Int], by playerID: String) throws -> [GameEvent] {
+        guard state.isChoosingWells else { throw GameError.notChoosingWells }
+        guard state.wellChooserID == playerID else { throw GameError.notYourTurn }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+
+        let unique = Set(slots)
+        guard unique.count == Rules.wellSize, slots.count == Rules.wellSize else {
+            throw GameError.wrongWellSize(expected: Rules.wellSize)
+        }
+        let hand = state.players[seat].hand
+        guard slots.allSatisfy({ hand.indices.contains($0) }) else {
+            throw GameError.cardNotInHand
+        }
+        let chosen = slots.map { hand[$0] }
+
+        for card in chosen {
+            state.players[seat].hand.removeAll { $0.id == card.id }
+            state.players[seat].well.append(card)
+        }
+        state.wellSelectionQueue.removeFirst()
+
+        var events: [GameEvent] = [.wellChosen(by: playerID, count: chosen.count)]
+        note("\(state.players[seat].name) banks two cards.")
+
+        if !state.isChoosingWells {
+            events.append(.wellSelectionFinished)
+            note("\(state.currentPlayer.name) leads.")
+            // The leader may be starting below the cap — a small deal leaves a
+            // short hand, and the top-up is owed at the start of a turn.
+            events += topUpForTurn()
+        }
+        return events
+    }
+
+    /// Draw the current player up to their cap before they act.
+    ///
+    /// Deal 5 and two go to the well, so play opens with three in hand and two
+    /// owed. Refilling only *after* a play would leave that player choosing from
+    /// three cards on the turn where they can least afford it.
+    private func topUpForTurn() -> [GameEvent] {
+        guard !state.isOver, !state.isChoosingWells else { return [] }
+        return refillHand(seat: state.currentPlayerIndex)
+    }
+
     private func finishOnePlay(seat: Int) -> [GameEvent] {
         var events: [GameEvent] = []
         state.playsRemainingThisTurn -= 1
@@ -375,6 +463,11 @@ final class GameEngine {
         state.players[index].owesExtraPlay = false
         state.pendingWell = nil
         events.append(.turnAdvanced(to: state.players[index].id, owesTwo: owesTwo))
+        // Top up before they act, not after. Normally a no-op — a hand is
+        // already at cap when its turn comes round — but it matters on the
+        // opening turns of a small deal, and after a poisoned queen changes
+        // someone's cap.
+        events += topUpForTurn()
         return events
     }
 
@@ -392,6 +485,7 @@ final class GameEngine {
     @discardableResult
     func drawFromWell(by playerID: String, slot: Int = 0) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
         guard !state.players[seat].well.isEmpty else { throw GameError.wellEmpty }
@@ -467,6 +561,7 @@ final class GameEngine {
     @discardableResult
     func skip(by playerID: String) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
         guard !state.turnStartedWithDebt else { throw GameError.cannotSkipWhileRepayingDebt }
@@ -491,6 +586,7 @@ final class GameEngine {
     /// A free action, available even off-turn.
     @discardableResult
     func declareSnackoo(by playerID: String, kind: GameEvent.SnackooKind) throws -> [GameEvent] {
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard let seat = state.index(of: playerID), !state.players[seat].isEliminated else {
             throw GameError.snackooNotAvailable
         }
@@ -654,6 +750,8 @@ final class GameEngine {
     @discardableResult
     func forfeit(by playerID: String) throws -> [GameEvent] {
         guard !state.isOver else { throw GameError.gameOver }
+        // Deliberately *not* gated on the well phase: someone quitting before
+        // they've banked would otherwise wedge everyone still waiting on them.
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
         guard !state.players[seat].isEliminated else { return [] }
 
@@ -671,6 +769,7 @@ final class GameEngine {
     /// no well. The UI calls this when `TurnOptions.isStranded`.
     @discardableResult
     func concedeStranded(by playerID: String) throws -> [GameEvent] {
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
         guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
         var events = eliminate(seat: seat, reason: .strandedWithoutWell)

@@ -12,11 +12,13 @@ import XCTest
 
 final class HandCapTests: XCTestCase {
 
-    private func engine(handSize: Int, seed: UInt32 = 4242) throws -> GameEngine {
-        try GameEngine(
+    private func engine(cardsDealt: Int, seed: UInt32 = 4242) throws -> GameEngine {
+        let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: handSize, seed: seed
+            dealerIndex: 1, cardsDealt: cardsDealt, seed: seed
         )
+        engine._finishWellSelectionForTesting()
+        return engine
     }
 
     /// The bug: hand cap was set to the deal size, so a 12-card deal refilled to
@@ -24,25 +26,40 @@ final class HandCapTests: XCTestCase {
     /// allowance — the rulebook's poisoned-queen sequence "5 → 4 → 3" only makes
     /// sense if the base cap is five.
     func testHandCapIsAlwaysFiveRegardlessOfDealSize() throws {
-        for handSize in [5, 6, 8, 12] {
-            let engine = try engine(handSize: handSize)
+        var checked = 0
+        for cardsDealt in [5, 6, 8, 12] {
+            let engine = try engine(cardsDealt: cardsDealt)
+            // The opening top-up draws from the deck, so it can turn up a queen
+            // and poison everyone before a card is played. That is the rule
+            // working, but it moves the caps — so those deals aren't what this
+            // test is measuring.
+            guard !engine.state.queensArePoisonous else { continue }
+            checked += 1
+
+            let leader = engine.state.currentPlayer.id
             for player in engine.state.players {
                 XCTAssertEqual(
                     player.handCap, 5,
-                    "Dealt \(handSize) — cap should still be 5"
+                    "Dealt \(cardsDealt) — cap should still be 5"
                 )
+                // Two of the deal went to the well. Whoever leads has already
+                // been topped up to the cap; nobody else has yet.
+                let expected = player.id == leader
+                    ? max(cardsDealt - Rules.wellSize, Rules.sustainingHandCap)
+                    : cardsDealt - Rules.wellSize
                 XCTAssertEqual(
-                    player.hand.count, handSize,
-                    "Dealt \(handSize) — the opening hand should be that size"
+                    player.hand.count, expected,
+                    "Dealt \(cardsDealt) — opening hand should be \(expected)"
                 )
             }
         }
+        XCTAssertGreaterThan(checked, 0, "Every deal poisoned queens — the test measured nothing")
     }
 
     func testALargeHandPlaysDownToFiveAndHoldsThere() throws {
-        let engine = try engine(handSize: 9)
+        let engine = try engine(cardsDealt: 9)
         let me = engine.state.currentPlayer.id
-        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 9)
+        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 7, "Nine dealt, two banked")
 
         // Play until the hand reaches the cap, then confirm it stops falling.
         var counts: [Int] = []
@@ -83,7 +100,7 @@ final class HandCapTests: XCTestCase {
     }
 
     func testRefillTopsUpToFiveButNeverRemovesCards() throws {
-        let engine = try engine(handSize: 5)
+        let engine = try engine(cardsDealt: 7)
         let me = engine.state.currentPlayer.id
         // Play one card; the refill should bring it straight back to five.
         let playable = try XCTUnwrap(
@@ -100,7 +117,7 @@ final class HandCapTests: XCTestCase {
     func testEachPoisonedQueenCostsACardOfCapacity() throws {
         var state = GameState(
             players: [PlayerState(id: "a", name: "A", kind: .human, handCap: Rules.sustainingHandCap)],
-            currentPlayerIndex: 0, dealerID: "a", handSize: 5
+            currentPlayerIndex: 0, dealerID: "a", cardsDealt: 5
         )
         XCTAssertEqual(state.players[0].handCap, 5)
         for expected in [4, 3, 2, 1, 1] {
@@ -122,8 +139,9 @@ final class PoisonedQueenTests: XCTestCase {
         for seed in UInt32(1)...400 {
             let engine = try GameEngine(
                 seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual)), ("c", "C", .ai(.casual))],
-                dealerIndex: 2, handSize: 8, seed: seed
+                dealerIndex: 2, cardsDealt: 8, seed: seed
             )
+            engine._finishWellSelectionForTesting()
             var guardCount = 0
             while !engine.state.isOver && !engine.state.queensArePoisonous && guardCount < 200 {
                 guardCount += 1
@@ -181,8 +199,9 @@ final class PoisonedQueenTests: XCTestCase {
     func testPoisonSnackooClearsThreeAndDrawsThree() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 909
+            dealerIndex: 1, cardsDealt: 5, seed: 909
         )
+        engine._finishWellSelectionForTesting()
         // Force three exiled queens onto the player.
         let seat = try XCTUnwrap(engine.state.index(of: "a"))
         let before = engine.state.players[seat].hand.count
@@ -210,8 +229,9 @@ final class WellChoiceTests: XCTestCase {
         // Find a position where a player is genuinely stuck, so the well is legal.
         let engine = try GameEngine(
             seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual))],
-            dealerIndex: 1, handSize: 6, seed: seed
+            dealerIndex: 1, cardsDealt: 6, seed: seed
         )
+        engine._finishWellSelectionForTesting()
         var guardCount = 0
         while !engine.state.isOver && guardCount < 300 {
             guardCount += 1
@@ -271,6 +291,11 @@ final class WellChoiceTests: XCTestCase {
             if playable {
                 XCTAssertEqual(after.well.count, 1, "The card they didn't pick should remain")
                 XCTAssertNotEqual(after.well[0].id, revealed.id)
+            } else if engine.state.pendingWell?.snackooRank != nil {
+                // The third outcome: unplayable, but the third of its rank, so
+                // the Snackoo is offered before they're told they're out. They
+                // are still very much in the game.
+                XCTAssertFalse(after.isEliminated, "The rescue must be offered before elimination")
             } else {
                 XCTAssertTrue(after.isEliminated)
                 XCTAssertTrue(after.well.isEmpty, "An eliminated player's well returns to the deck")
@@ -363,8 +388,9 @@ final class WellSnackooRescueTests: XCTestCase {
     private func stuckWithTrio() throws -> (GameEngine, String, Rank) {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 31337
+            dealerIndex: 1, cardsDealt: 5, seed: 31337
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
 
@@ -450,8 +476,9 @@ final class WellSnackooRescueTests: XCTestCase {
         // The rescue must not accidentally spare everyone.
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 31337
+            dealerIndex: 1, cardsDealt: 5, seed: 31337
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
         seeded.tally = 99
@@ -507,7 +534,7 @@ final class CardSetTests: XCTestCase {
         for index in 1..<players {
             seats.append(PlayerState(id: "p\(index)", name: "P\(index)", kind: .ai(.sharp), handCap: 5))
         }
-        var state = GameState(players: seats, currentPlayerIndex: 0, dealerID: "a", handSize: 5)
+        var state = GameState(players: seats, currentPlayerIndex: 0, dealerID: "a", cardsDealt: 5)
         state.tally = tally
         return state
     }
@@ -612,8 +639,9 @@ final class CardSetTests: XCTestCase {
     func testPlayingASetCountsAsOnePlayAndDiscardsEveryCard() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 1, handSize: 5, seed: 4242
+            dealerIndex: 1, cardsDealt: 5, seed: 4242
         )
+        engine._finishWellSelectionForTesting()
         var seeded = engine.state
         let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
         let set = cards(.three, [.spades, .hearts, .clubs])
@@ -629,5 +657,219 @@ final class CardSetTests: XCTestCase {
             XCTAssertTrue(engine.state.discardPile.contains { $0.id == card.id }, "Every card lands on the pile")
         }
         XCTAssertNotEqual(engine.state.currentPlayer.id, "a", "One play, so the turn passes")
+    }
+}
+
+// MARK: - Moving a suit lock
+
+/// The lock is set by an 8, and the author's ruling is that it can only be
+/// *moved* by an 8 played directly on another 8. Anything else landing in
+/// between makes the lock binding again.
+final class MovingTheLockTests: XCTestCase {
+
+    private func board(lock: Suit, topIsEight: Bool, tally: Int = 20) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 5),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 5),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        state.suitLock = SuitLock(suit: lock, setByPlayerID: "b")
+        state.topPlayedAsEight = topIsEight
+        return state
+    }
+
+    private func card(_ rank: Rank, _ suit: Suit) -> Card { Card(id: 1, rank: rank, suit: suit) }
+
+    func testAnEightOfAnySuitMayTakeOverALockWhenPlayedOnAnEight() {
+        let state = board(lock: .hearts, topIsEight: true)
+        switch Rules.resolve(card: card(.eight, .diamonds), declaration: .lock(.clubs), in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.locksSuit, .clubs, "The off-suit 8 moves the lock")
+            XCTAssertEqual(effect.newTally, 28)
+        case .failure(let reason):
+            XCTFail("An 8 on an 8 should be legal: \(reason.explanation)")
+        }
+    }
+
+    /// The narrowing the author asked for: once something else is on top, an
+    /// off-suit 8 is as dead as any other off-suit card.
+    func testAnOffSuitEightIsBlockedWhenTheTopCardIsNotAnEight() {
+        let state = board(lock: .hearts, topIsEight: false)
+        switch Rules.resolve(card: card(.eight, .diamonds), declaration: .lock(.clubs), in: state) {
+        case .success:
+            XCTFail("An off-suit 8 should not move a lock it wasn't played onto")
+        case .failure(let reason):
+            XCTAssertEqual(reason, .suitLocked(.hearts))
+        }
+    }
+
+    /// An 8 that *does* follow the lock is legal either way — it's an on-suit
+    /// card like any other.
+    func testAnOnSuitEightIsAlwaysLegal() {
+        for topIsEight in [true, false] {
+            let state = board(lock: .hearts, topIsEight: topIsEight)
+            switch Rules.resolve(card: card(.eight, .hearts), declaration: .lock(.spades), in: state) {
+            case .success(let effect): XCTAssertEqual(effect.locksSuit, .spades)
+            case .failure(let reason): XCTFail("top-is-eight=\(topIsEight): \(reason.explanation)")
+            }
+        }
+    }
+
+    /// The author's other route: a Queen is never blocked, so she can be played
+    /// under any lock, declared an 8, and used to move it.
+    func testAQueenCanBeDeclaredAnEightToSeizeALock() {
+        let state = board(lock: .hearts, topIsEight: false)
+        switch Rules.resolve(
+            card: card(.queen, .spades),
+            declaration: .queen(as: .eight, lockSuit: .diamonds),
+            in: state
+        ) {
+        case .success(let effect):
+            XCTAssertEqual(effect.locksSuit, .diamonds)
+            XCTAssertEqual(effect.effectiveRank, .eight)
+        case .failure(let reason):
+            XCTFail("A Queen is never blocked by a lock: \(reason.explanation)")
+        }
+    }
+
+    /// And having done so she leaves an 8 face up, so the next player gets the
+    /// same opportunity she just took.
+    func testAQueenPlayedAsAnEightLeavesAnEightFaceUp() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: 909
+        )
+        engine._finishWellSelectionForTesting()
+
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == seeded.currentPlayer.id })
+        let queen = Card(id: 800, rank: .queen, suit: .spades)
+        seeded.players[seat].hand = [queen]
+        seeded.tally = 10
+        seeded.suitLock = SuitLock(suit: .hearts, setByPlayerID: "b")
+        seeded.topPlayedAsEight = false
+        engine._replaceStateForTesting(seeded)
+
+        try engine.play(
+            cardID: queen.id,
+            by: engine.state.currentPlayer.id,
+            declaration: .queen(as: .eight, lockSuit: .diamonds)
+        )
+
+        XCTAssertEqual(engine.state.suitLock?.suit, .diamonds)
+        XCTAssertTrue(
+            engine.state.topPlayedAsEight,
+            "She's an 8 now, so the next player may play an 8 of any suit on her"
+        )
+    }
+
+    /// A plain card resets it, which is the whole point of the narrowing.
+    func testAnyOtherCardClosesTheDoor() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: 909
+        )
+        engine._finishWellSelectionForTesting()
+
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == seeded.currentPlayer.id })
+        let three = Card(id: 801, rank: .three, suit: .hearts)
+        seeded.players[seat].hand = [three]
+        seeded.tally = 10
+        seeded.suitLock = SuitLock(suit: .hearts, setByPlayerID: "b")
+        seeded.topPlayedAsEight = true
+        engine._replaceStateForTesting(seeded)
+
+        try engine.play(cardID: three.id, by: engine.state.currentPlayer.id, declaration: .plain)
+        XCTAssertFalse(engine.state.topPlayedAsEight)
+    }
+}
+
+// MARK: - A Queen played as an 8 must ask which suit
+
+/// Reported from a real game: an opponent locked the suit, the player answered
+/// with a Queen declared as an 8, and was never asked where to point the lock.
+///
+/// The engine was never the problem — it offers every suit. The sheet resolved
+/// the Queen's options by picking whichever produced the lowest tally, and every
+/// lock suit produces the *same* tally, so the tie-break silently chose one.
+/// These pin the engine half; the sheet now asks as a second step.
+final class QueenAsEightDeclarationTests: XCTestCase {
+
+    private func lockedBoard(_ lock: Suit, tally: Int = 20) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 5),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 5),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        state.suitLock = SuitLock(suit: lock, setByPlayerID: "b")
+        // The lock was just set by an 8, which is the situation described.
+        state.topPlayedAsEight = true
+        return state
+    }
+
+    func testAQueenUnderALockIsOfferedEverySuitAsAnEight() {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let declarations = Rules.legalDeclarations(for: queen, in: lockedBoard(.hearts))
+        let asEight = declarations.filter { $0.queenAs == .eight }
+
+        for suit in Suit.allCases {
+            XCTAssertTrue(
+                asEight.contains { $0.lockSuit == suit },
+                "A Queen played as an 8 should be able to lock \(suit.displayName)"
+            )
+        }
+        XCTAssertTrue(
+            asEight.contains { $0.declinesLock },
+            "…and to lock nothing at all"
+        )
+        XCTAssertEqual(asEight.count, 5, "Four suits plus declining")
+    }
+
+    /// Every one of those options is genuinely legal — so a UI that showed them
+    /// all can't produce a refused move.
+    func testEveryOfferedQueenAsEightOptionIsAccepted() throws {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let state = lockedBoard(.hearts)
+        let asEight = Rules.legalDeclarations(for: queen, in: state).filter { $0.queenAs == .eight }
+        XCTAssertFalse(asEight.isEmpty)
+
+        for declaration in asEight {
+            switch Rules.resolve(card: queen, declaration: declaration, in: state) {
+            case .success(let effect):
+                XCTAssertEqual(effect.effectiveRank, .eight)
+                XCTAssertEqual(effect.newTally, 28)
+                if declaration.declinesLock {
+                    XCTAssertNil(effect.locksSuit)
+                    XCTAssertTrue(effect.liftsSuitLock, "Declining should free the table")
+                } else {
+                    XCTAssertEqual(effect.locksSuit, declaration.lockSuit)
+                }
+            case .failure(let reason):
+                XCTFail("Offered but refused: \(reason.explanation)")
+            }
+        }
+    }
+
+    /// The tie-break that caused it: all five options land on the same tally, so
+    /// "pick the lowest" cannot distinguish them and silently took the first.
+    func testTheOptionsAreIndistinguishableByTallyWhichIsWhyItHadToAsk() {
+        let queen = Card(id: 1, rank: .queen, suit: .spades)
+        let state = lockedBoard(.hearts)
+        let tallies = Rules.legalDeclarations(for: queen, in: state)
+            .filter { $0.queenAs == .eight }
+            .compactMap { declaration -> Int? in
+                guard case .success(let effect) = Rules.resolve(
+                    card: queen, declaration: declaration, in: state
+                ) else { return nil }
+                return effect.newTally
+            }
+        XCTAssertEqual(Set(tallies).count, 1, "All the same tally — nothing to sort on")
     }
 }

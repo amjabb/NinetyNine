@@ -237,8 +237,8 @@ struct GameTableView: View {
 
                 if showsStuck && options.isStranded {
                     ActionButton(
-                        title: "No outs",
-                        subtitle: "concede the seat",
+                        title: "SDQ",
+                        subtitle: "Self Disqualify",
                         tint: Palette.danger,
                         icon: "xmark.circle.fill"
                     ) {
@@ -406,6 +406,20 @@ struct GameTableView: View {
             PauseMenu(
                 onResume: { showsPauseMenu = false },
                 onQuit: onExit
+            )
+        }
+
+        // Before the first card: everyone builds their own well out of what they
+        // were dealt. Above the table, below the hand-off — the hand-off has to
+        // come first on a shared device or the next player's deal is face up
+        // before they're holding the phone.
+        if viewModel.isChoosingWell, let view = viewModel.view {
+            WellSelectionView(
+                playerName: view.yourName,
+                slotCount: view.wellChoiceCount,
+                wellSize: Rules.wellSize,
+                isSharedDevice: viewModel.isSharedDevice,
+                onConfirm: { viewModel.chooseWell(slots: $0) }
             )
         }
 
@@ -674,7 +688,12 @@ struct PauseMenu: View {
                     .foregroundStyle(Palette.ivory)
 
                 BrassButton(title: "Resume", isProminent: true, action: onResume)
-                BrassButton(title: "Quit to menu", isProminent: false, action: onQuit)
+                BrassButton(
+                    title: "SDQ",
+                    subtitle: "Self Disqualify",
+                    isProminent: false,
+                    action: onQuit
+                )
             }
             .padding(26)
             .frame(maxWidth: 300)

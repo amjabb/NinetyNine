@@ -32,14 +32,14 @@ final class MatchCoordinatorTests: XCTestCase {
         ais: Int,
         mode: MatchCoordinator.MatchMode,
         seed: UInt32 = 2024,
-        handSize: Int = 6
+        cardsDealt: Int = 6
     ) -> (MatchCoordinator, LoopbackTransport) {
         let people = participants(humans: humans, ais: ais)
         let transport = LoopbackTransport(
             localPlayerID: people[0].id,
             participants: people,
             seed: seed,
-            handSize: handSize
+            cardsDealt: cardsDealt
         )
         return (MatchCoordinator(transport: transport, mode: mode), transport)
     }
@@ -49,15 +49,48 @@ final class MatchCoordinatorTests: XCTestCase {
         try? await Task.sleep(for: .seconds(seconds))
     }
 
+    /// Bank a well for every local human who's asked to.
+    ///
+    /// A match now opens with a blind well pick rather than a table, and a
+    /// player's own deal is hidden from them until they've banked — so any test
+    /// that wants to look at a hand has to get through this first.
+    private func bankAllWells(_ match: MatchCoordinator) async {
+        for _ in 0..<24 {
+            // Done: nobody is still owed a well.
+            guard match.view?.wellChooserID != nil else { return }
+
+            if match.view?.youAreChoosingYourWell == true,
+               let chooser = match.view?.wellChooserID {
+                await match.submit(.chooseWell(slots: [0, 1]), by: chooser)
+            } else if match.awaitingHandoff {
+                match.acknowledgeHandoff()
+            }
+            // The AI seats bank on their own, with a thinking delay — so this
+            // has to wait for the *phase* to finish, not just for this player's
+            // own pick. Returning early leaves the leader un-topped-up and every
+            // hand-count assertion one card short.
+            await settle()
+        }
+    }
+
     // MARK: - Starting
 
     func testStartingAMatchDealsAndProducesAView() async throws {
         let (match, _) = makeMatch(humans: 1, ais: 2, mode: .solo)
         try await match.start()
 
+        // Dealt six, two buried blind, so four in hand — then topped up to the
+        // sustaining five before this player leads.
+        await bankAllWells(match)
+
         let view = try XCTUnwrap(match.view)
         XCTAssertEqual(view.youID, "h0")
-        XCTAssertEqual(view.yourHand.count, 6)
+        // Topped up *to this player's cap* rather than to a flat five: the
+        // opening draw can turn up a queen and poison the table before anyone
+        // plays, which permanently lowers the cap of whoever was holding one.
+        XCTAssertEqual(view.currentPlayerID, "h0", "The local player should lead")
+        XCTAssertEqual(view.yourHand.count, view.yourHandCap)
+        XCTAssertLessThanOrEqual(view.yourHandCap, Rules.sustainingHandCap)
         XCTAssertEqual(view.opponents.count, 2)
         XCTAssertEqual(view.seatingOrder.count, 3)
         XCTAssertEqual(view.tally, 0)
@@ -190,6 +223,7 @@ final class MatchCoordinatorTests: XCTestCase {
     func testHandoffRevealsTheNextPlayersOwnHand() async throws {
         let (match, _) = makeMatch(humans: 2, ais: 0, mode: .passAndPlay)
         try await match.start()
+        await bankAllWells(match)
         match.acknowledgeHandoff()
 
         let firstHand = try XCTUnwrap(match.view).yourHand
@@ -209,20 +243,23 @@ final class MatchCoordinatorTests: XCTestCase {
         // The whole risk of one shared screen.
         let (match, _) = makeMatch(humans: 2, ais: 0, mode: .passAndPlay)
         try await match.start()
+        await bankAllWells(match)
         match.acknowledgeHandoff()
 
         let view = try XCTUnwrap(match.view)
         XCTAssertEqual(view.youID, "h0")
+        let expected = view.yourHand.count
+        XCTAssertGreaterThan(expected, 0)
         for opponent in view.opponents {
             XCTAssertEqual(opponent.id, "h1")
             // Counts, never cards.
-            XCTAssertEqual(opponent.handCount, 6)
+            XCTAssertGreaterThan(opponent.handCount, 0)
         }
         // And nothing in the encoded view carries the opponent's cards.
         let data = try JSONEncoder().encode(view)
         let decoded = try JSONDecoder().decode(PlayerView.self, from: data)
-        XCTAssertEqual(decoded.yourHand.count, 6)
-        XCTAssertEqual(Set(decoded.yourHand.map(\.id)).count, 6)
+        XCTAssertEqual(decoded.yourHand.count, expected)
+        XCTAssertEqual(Set(decoded.yourHand.map(\.id)).count, expected)
     }
 
     func testSoloModeNeverAsksForAHandoff() async throws {
@@ -241,7 +278,7 @@ final class MatchCoordinatorTests: XCTestCase {
     func testAParticipantLeavingForfeitsTheirSeat() async throws {
         let people = participants(humans: 1, ais: 2)
         let transport = LoopbackTransport(
-            localPlayerID: "h0", participants: people, seed: 99, handSize: 6
+            localPlayerID: "h0", participants: people, seed: 99, cardsDealt: 6
         )
         let match = MatchCoordinator(transport: transport, mode: .online)
         try await match.start()
@@ -282,9 +319,12 @@ final class MatchCoordinatorTests: XCTestCase {
         let replay = try GameEngine(
             seats: match.participants.map { ($0.id, $0.name, $0.enginePlayerKind) },
             dealerIndex: match.participants.count - 1,
-            handSize: 6,
+            cardsDealt: 6,
             seed: 8888
         )
+        // No shortcut here: the coordinator logs each player's well choice as a
+        // real action, so replaying the log has to reproduce that too. Skipping
+        // ahead would hide exactly the desync this test exists to catch.
         for entry in match.actionLog { try replay.apply(entry) }
 
         XCTAssertEqual(replay.state.tally, match.view?.tally, "Replay diverged from the live match")

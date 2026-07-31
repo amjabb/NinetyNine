@@ -37,7 +37,7 @@ final class EngineTests: XCTestCase {
             players: [alice, bob],
             currentPlayerIndex: 0,
             dealerID: "b",
-            handSize: handCap
+            cardsDealt: handCap
         )
         state.tally = tally
         state.forcedNegativeNext = forcedNegative
@@ -277,9 +277,10 @@ final class EngineTests: XCTestCase {
         let engine = try GameEngine(
             seats: [("a", "Alice", .human), ("b", "Bob", .ai(.sharp)), ("c", "Cara", .ai(.sharp))],
             dealerIndex: 0,
-            handSize: 5,
+            cardsDealt: 5,
             seed: 4242
         )
+        engine._finishWellSelectionForTesting()
         // Force a lock, then skip and confirm it lifts.
         let current = engine.state.currentPlayer.id
         let events = try engine.skip(by: current)
@@ -348,14 +349,30 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(Rules.blockingReason(for: card(.two, .spades), in: state), .suitLocked(.hearts))
     }
 
-    // MARK: - Hand-size limits
+    // MARK: - What the dealer may deal
 
-    func testMaxHandSizeMatchesTheRulebookTable() {
-        XCTAssertEqual(Rules.maxHandSize(forPlayerCount: 2), 12)
-        XCTAssertEqual(Rules.maxHandSize(forPlayerCount: 3), 12)
-        XCTAssertEqual(Rules.maxHandSize(forPlayerCount: 4), 11)
-        XCTAssertEqual(Rules.maxHandSize(forPlayerCount: 5), 8)
-        XCTAssertEqual(Rules.maxHandSize(forPlayerCount: 6), 6)
+    /// The well now comes *out* of the deal rather than on top of it, so the
+    /// whole deck is available: players × cardsDealt ≤ 52.
+    func testTheBiggestLegalDealIsWhatTheDeckCanCover() {
+        XCTAssertEqual(Rules.maxCardsDealt(forPlayerCount: 2), 12)
+        XCTAssertEqual(Rules.maxCardsDealt(forPlayerCount: 3), 12)
+        XCTAssertEqual(Rules.maxCardsDealt(forPlayerCount: 4), 12)
+        XCTAssertEqual(Rules.maxCardsDealt(forPlayerCount: 5), 10)
+        XCTAssertEqual(Rules.maxCardsDealt(forPlayerCount: 6), 8)
+
+        for count in 2...6 {
+            XCTAssertLessThanOrEqual(
+                count * Rules.maxCardsDealt(forPlayerCount: count), 52,
+                "\(count) players at the maximum deal would need more than a deck"
+            )
+        }
+    }
+
+    /// Two of whatever you're dealt go to the well, so three is the smallest
+    /// deal that leaves a hand at all.
+    func testTheSmallestLegalDealStillLeavesAHand() {
+        XCTAssertEqual(Rules.minCardsDealt, 3)
+        XCTAssertEqual(Rules.minCardsDealt - Rules.wellSize, 1)
     }
 
     // MARK: - Dealing
@@ -364,20 +381,29 @@ final class EngineTests: XCTestCase {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp)), ("c", "C", .ai(.sharp)), ("d", "D", .ai(.sharp))],
             dealerIndex: 0,
-            handSize: 7,
+            cardsDealt: 7,
             seed: 99
         )
+        // Before anyone chooses: it's all in hand, and nobody has a well.
+        XCTAssertTrue(engine.state.isChoosingWells)
+        for player in engine.state.players {
+            XCTAssertEqual(player.hand.count, 7, "The whole deal starts in hand")
+            XCTAssertTrue(player.well.isEmpty, "The well is chosen, not dealt")
+        }
+
+        engine._finishWellSelectionForTesting()
         let state = engine.state
         XCTAssertEqual(state.players.count, 4)
+        XCTAssertFalse(state.isChoosingWells)
         for player in state.players {
-            XCTAssertEqual(player.hand.count, 7)
+            XCTAssertEqual(player.hand.count, 5, "Dealt seven, banked two, holding five")
             XCTAssertEqual(player.well.count, 2)
             XCTAssertTrue(player.poisonPile.isEmpty)
             // The cap is the *sustaining* size, not the deal size — dealt seven,
             // you play down to five and hold there.
             XCTAssertEqual(player.handCap, Rules.sustainingHandCap)
         }
-        XCTAssertEqual(state.drawPile.count, 52 - 4 * 9)
+        XCTAssertEqual(state.drawPile.count, 52 - 4 * 7)
         XCTAssertEqual(state.tally, 0)
         XCTAssertTrue(state.discardPile.isEmpty, "There is no starting discard in 99")
     }
@@ -386,9 +412,10 @@ final class EngineTests: XCTestCase {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp)), ("c", "C", .ai(.sharp))],
             dealerIndex: 0,
-            handSize: 5,
+            cardsDealt: 5,
             seed: 1
         )
+        engine._finishWellSelectionForTesting()
         XCTAssertEqual(engine.state.currentPlayer.id, "b")
     }
 
@@ -396,9 +423,10 @@ final class EngineTests: XCTestCase {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
             dealerIndex: 0,
-            handSize: 12,
+            cardsDealt: 12,
             seed: 7
         )
+        engine._finishWellSelectionForTesting()
         let state = engine.state
         var ids: [Int] = state.drawPile.map(\.id)
         for player in state.players {
@@ -408,13 +436,19 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, 52, "No duplicate cards")
     }
 
-    func testInvalidPlayerCountAndHandSizeAreRejected() {
-        XCTAssertThrowsError(try GameEngine(seats: [("a", "A", .human)], dealerIndex: 0, handSize: 5))
+    func testInvalidPlayerCountAndDealAreRejected() {
+        XCTAssertThrowsError(try GameEngine(seats: [("a", "A", .human)], dealerIndex: 0, cardsDealt: 5))
+        // Two cards would be all well and no hand.
         XCTAssertThrowsError(try GameEngine(
-            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))], dealerIndex: 0, handSize: 13
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))], dealerIndex: 0, cardsDealt: 2
         ))
         XCTAssertThrowsError(try GameEngine(
-            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))], dealerIndex: 0, handSize: 4
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))], dealerIndex: 0, cardsDealt: 13
+        ))
+        // Four is legal now — two to the well and a hand of two, topped up on
+        // the first turn.
+        XCTAssertNoThrow(try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))], dealerIndex: 0, cardsDealt: 4
         ))
     }
 
@@ -422,8 +456,9 @@ final class EngineTests: XCTestCase {
         func firstHand() throws -> [Int] {
             let engine = try GameEngine(
                 seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-                dealerIndex: 0, handSize: 6, seed: 20250729
+                dealerIndex: 0, cardsDealt: 6, seed: 20250729
             )
+            engine._finishWellSelectionForTesting()
             return engine.state.players[0].hand.map(\.id)
         }
         XCTAssertEqual(try firstHand(), try firstHand())
@@ -434,8 +469,9 @@ final class EngineTests: XCTestCase {
     func testPlayingACardAdvancesTheTurnAndRefillsTheHand() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 3
+            dealerIndex: 0, cardsDealt: 5, seed: 3
         )
+        engine._finishWellSelectionForTesting()
         let mover = engine.state.currentPlayer
         let playable = try XCTUnwrap(mover.hand.first { Rules.isPlayable($0, in: engine.state) })
         let declaration = try XCTUnwrap(Rules.legalDeclarations(for: playable, in: engine.state).first)
@@ -451,8 +487,9 @@ final class EngineTests: XCTestCase {
     func testPlayingOutOfTurnThrows() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 11
+            dealerIndex: 0, cardsDealt: 5, seed: 11
         )
+        engine._finishWellSelectionForTesting()
         let waiting = engine.state.players.first { $0.id != engine.state.currentPlayer.id }!
         let anyCard = waiting.hand[0]
         XCTAssertThrowsError(try engine.play(cardID: anyCard.id, by: waiting.id, declaration: .plain)) { error in
@@ -463,8 +500,9 @@ final class EngineTests: XCTestCase {
     func testSkipCreatesADoublePlayDebtOnTheNextTurn() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 5
+            dealerIndex: 0, cardsDealt: 5, seed: 5
         )
+        engine._finishWellSelectionForTesting()
         let skipper = engine.state.currentPlayer.id
         try engine.skip(by: skipper)
         XCTAssertTrue(try XCTUnwrap(engine.state.player(id: skipper)).owesExtraPlay)
@@ -486,8 +524,9 @@ final class EngineTests: XCTestCase {
     func testCannotSkipTwiceInARow() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 5
+            dealerIndex: 0, cardsDealt: 5, seed: 5
         )
+        engine._finishWellSelectionForTesting()
         let skipper = engine.state.currentPlayer.id
         try engine.skip(by: skipper)
         let other = engine.state.currentPlayer.id
@@ -515,8 +554,9 @@ final class EngineTests: XCTestCase {
     func testWellRequiresBeingStuck() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 8
+            dealerIndex: 0, cardsDealt: 5, seed: 8
         )
+        engine._finishWellSelectionForTesting()
         // At tally 0 with a full hand there is certainly a legal play.
         XCTAssertTrue(Rules.hasLegalPlay(playerID: engine.state.currentPlayer.id, in: engine.state))
         XCTAssertThrowsError(try engine.drawFromWell(by: engine.state.currentPlayer.id)) { error in
@@ -527,8 +567,9 @@ final class EngineTests: XCTestCase {
     func testTurnOptionsOfferWellAndSkipOnlyWhenStuck() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 8
+            dealerIndex: 0, cardsDealt: 5, seed: 8
         )
+        engine._finishWellSelectionForTesting()
         let options = engine.currentPlayerOptions
         XCTAssertTrue(options.canPlayFromHand)
         XCTAssertFalse(options.canUseWell)
@@ -562,8 +603,9 @@ final class EngineTests: XCTestCase {
         for seed in UInt32(1)...200 {
             let engine = try GameEngine(
                 seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-                dealerIndex: 0, handSize: 12, seed: seed
+                dealerIndex: 0, cardsDealt: 12, seed: seed
             )
+            engine._finishWellSelectionForTesting()
             if let seat = engine.state.players.firstIndex(where: { !Rules.snackooRanksInHand(for: $0).isEmpty }),
                let rank = Rules.snackooRanksInHand(for: engine.state.players[seat]).first {
                 found = (engine, seat, rank)
@@ -585,8 +627,9 @@ final class EngineTests: XCTestCase {
     func testSnackooWithoutATrioThrows() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
-            dealerIndex: 0, handSize: 5, seed: 31
+            dealerIndex: 0, cardsDealt: 5, seed: 31
         )
+        engine._finishWellSelectionForTesting()
         XCTAssertThrowsError(try engine.declareSnackoo(by: "a", kind: .threeQueens)) { error in
             XCTAssertEqual(error as? GameError, .snackooNotAvailable)
         }
@@ -607,8 +650,9 @@ final class EngineTests: XCTestCase {
         for seed in [UInt32(1), 17, 512, 9001] {
             let engine = try GameEngine(
                 seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless))],
-                dealerIndex: 0, handSize: 6, seed: seed
+                dealerIndex: 0, cardsDealt: 6, seed: seed
             )
+            engine._finishWellSelectionForTesting()
             let ai = AIPlayer(difficulty: .sharp)
             let move = try XCTUnwrap(ai.nextMove(for: engine.state.currentPlayer.id, engine: engine))
             if case .play(let cardID, let declaration) = move.kind {
@@ -631,8 +675,9 @@ final class EngineTests: XCTestCase {
                     ("b", "B", .ai(.sharp)),
                     ("c", "C", .ai(.ruthless)),
                 ],
-                dealerIndex: 0, handSize: 6, seed: seed
+                dealerIndex: 0, cardsDealt: 6, seed: seed
             )
+            engine._finishWellSelectionForTesting()
             var turns = 0
             while !engine.state.isOver && turns < 4000 {
                 turns += 1
@@ -675,8 +720,9 @@ final class EngineTests: XCTestCase {
     func testTallyNeverLeavesLegalBoundsAcrossSelfPlay() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .ai(.ruthless)), ("b", "B", .ai(.ruthless))],
-            dealerIndex: 0, handSize: 8, seed: 606
+            dealerIndex: 0, cardsDealt: 8, seed: 606
         )
+        engine._finishWellSelectionForTesting()
         var turns = 0
         while !engine.state.isOver && turns < 4000 {
             turns += 1
@@ -712,8 +758,9 @@ final class EngineTests: XCTestCase {
     func testEliminationReturnsCardsToCirculation() throws {
         let engine = try GameEngine(
             seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual)), ("c", "C", .ai(.casual))],
-            dealerIndex: 0, handSize: 5, seed: 4711
+            dealerIndex: 0, cardsDealt: 5, seed: 4711
         )
+        engine._finishWellSelectionForTesting()
         var turns = 0
         while engine.state.activePlayers.count == 3 && turns < 4000 {
             turns += 1

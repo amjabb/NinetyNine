@@ -45,7 +45,16 @@ struct PlayerView: Codable, Sendable {
     var yourName: String
     /// Your own hand, in full. This is the only place real cards appear for a
     /// living player.
+    ///
+    /// **Empty while you're choosing your well.** The deal is face down until
+    /// the well is banked — see `wellChoiceCount`. Redacting it here rather than
+    /// hiding it in the view is the point of this type: a UI that merely
+    /// declined to draw the faces would still have them in memory, and in an
+    /// online match would have shipped them over the wire.
     var yourHand: [Card]
+    /// How many face-down cards you're choosing your well from. Zero unless it's
+    /// your turn to choose.
+    var wellChoiceCount: Int
     /// Your well cards are face down even to you — a count, not the cards.
     /// Revealing one early would defeat the entire point of the well.
     var yourWellCount: Int
@@ -66,7 +75,15 @@ struct PlayerView: Codable, Sendable {
     var tally: Int
     var direction: Int
     var currentPlayerID: String
+    /// Whoever is banking their well right now, or nil once play has begun.
+    /// The opening phase runs on its own order, so the UI can't infer this
+    /// from `currentPlayerID`.
+    var wellChooserID: String?
     var suitLock: SuitLock?
+    /// Whether the face-up card counts as an 8 — the UI needs this to grey the
+    /// right cards, and getting it wrong here means the table disagrees with the
+    /// engine about what's legal.
+    var topPlayedAsEight: Bool
     var forcedNegativeNext: Bool
     var pendingNineSuit: Suit?
     var queensArePoisonous: Bool
@@ -78,7 +95,7 @@ struct PlayerView: Codable, Sendable {
     var drawPileCount: Int
 
     var dealerID: String
-    var handSize: Int
+    var cardsDealt: Int
     var winnerID: String?
     var firstEliminatedID: String?
 
@@ -120,10 +137,12 @@ extension GameState {
         return PlayerView(
             youID: playerID,
             yourName: you?.name ?? "You",
-            yourHand: you?.hand ?? [],
+            // Hidden from its owner during the blind pick — a count, not cards.
+            yourHand: wellChooserID == playerID ? [] : (you?.hand ?? []),
+            wellChoiceCount: wellChooserID == playerID ? (you?.hand.count ?? 0) : 0,
             yourWellCount: you?.well.count ?? 0,
             yourPoisonPile: you?.poisonPile ?? [],
-            yourHandCap: you?.handCap ?? handSize,
+            yourHandCap: you?.handCap ?? cardsDealt,
             youOweExtraPlay: you?.owesExtraPlay ?? false,
             youAreEliminated: you?.isEliminated ?? false,
             opponents: players
@@ -146,14 +165,16 @@ extension GameState {
             tally: tally,
             direction: direction,
             currentPlayerID: currentPlayer.id,
+            wellChooserID: wellChooserID,
             suitLock: suitLock,
+            topPlayedAsEight: topPlayedAsEight,
             forcedNegativeNext: forcedNegativeNext,
             pendingNineSuit: pendingNineSuit,
             queensArePoisonous: queensArePoisonous,
             discardPile: discardPile,
             drawPileCount: drawPile.count,
             dealerID: dealerID,
-            handSize: handSize,
+            cardsDealt: cardsDealt,
             winnerID: winnerID,
             firstEliminatedID: firstEliminatedID,
             playsRemainingThisTurn: playsRemainingThisTurn,
@@ -176,6 +197,13 @@ extension PlayerView {
     /// Only your own cards can be judged this way, which is exactly the set the
     /// UI needs. Nothing hidden is invented — the reconstructed state has empty
     /// opponent hands, and no rule consults them.
+    /// True while *you* are the one banking cards.
+    var youAreChoosingYourWell: Bool { wellChooserID == youID }
+
+    /// Face-down placeholders to draw while choosing. They carry no identity —
+    /// the real cards aren't in this view at all.
+    var wellChoiceSlots: [Int] { Array(0..<wellChoiceCount) }
+
     func rulesContext() -> GameState {
         var reconstructed = GameState(
             players: seatingOrder.map { id in
@@ -195,7 +223,7 @@ extension PlayerView {
                     id: id,
                     name: other?.name ?? id,
                     kind: (other?.isAI ?? false) ? .ai(.sharp) : .human,
-                    handCap: other?.handCap ?? handSize
+                    handCap: other?.handCap ?? cardsDealt
                 )
                 them.well = Array(repeating: Card(id: -1, rank: .jack, suit: .spades),
                                   count: other?.wellCount ?? 0)
@@ -205,11 +233,12 @@ extension PlayerView {
             },
             currentPlayerIndex: seatingOrder.firstIndex(of: currentPlayerID) ?? 0,
             dealerID: dealerID,
-            handSize: handSize
+            cardsDealt: cardsDealt
         )
         reconstructed.tally = tally
         reconstructed.direction = direction
         reconstructed.suitLock = suitLock
+        reconstructed.topPlayedAsEight = topPlayedAsEight
         reconstructed.forcedNegativeNext = forcedNegativeNext
         reconstructed.pendingNineSuit = pendingNineSuit
         reconstructed.queensArePoisonous = queensArePoisonous
@@ -218,6 +247,9 @@ extension PlayerView {
         reconstructed.playsRemainingThisTurn = playsRemainingThisTurn
         reconstructed.turnStartedWithDebt = turnStartedWithDebt
         reconstructed.pendingWell = pendingWell
+        // Only the chooser's identity survives redaction, which is all the
+        // rules need: the queue's remaining order is nobody else's business.
+        reconstructed.wellSelectionQueue = wellChooserID.map { [$0] } ?? []
         return reconstructed
     }
 

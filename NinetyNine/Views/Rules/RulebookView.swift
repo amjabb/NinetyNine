@@ -188,10 +188,23 @@ struct RuleSection: Identifiable {
             ]
         ),
         RuleSection(
+            id: "well-build",
+            title: "Building your well",
+            glyph: "square.stack.3d.down.right",
+            points: [
+                "Everything the dealer deals goes to your hand — then you bury two of it face down as your well.",
+                "Deal 7 and you open holding 5. Deal 5 and you open holding 3, and draw up to five on your first turn.",
+                "You won't see those two again until you're stuck with nothing legal in hand.",
+                "The cards that make the best well are the ones you'd want in hand — a Queen is never blocked, a Jack can't bust you. That's the whole decision.",
+                "A small deal is a thin choice: at three cards you bank two of three.",
+            ]
+        ),
+        RuleSection(
             id: "turn",
             title: "Taking a turn",
             glyph: "arrow.right.circle",
             points: [
+                "Your hand is topped up to five at the start of your turn if it's short.",
                 "Play one legal card from your hand, face up, onto the pile. If you have a legal card, playing it is mandatory.",
                 "Afterwards you draw back up to your hand limit.",
                 "Cards you can't legally play are dimmed. Tap one to see why.",
@@ -217,8 +230,10 @@ struct RuleSection: Identifiable {
             points: [
                 "Playing an 8 adds 8 and locks the suit. Everyone after you must follow it.",
                 "Naming a suit is optional — you can play an 8 and lock nothing.",
-                "Only cards of the locked suit are legal — including 8s. An 8 of the locked suit may rename it.",
-                "A Queen ignores the lock entirely, whatever suit she is. Declare her an 8 to move the lock anywhere you like.",
+                "Only cards of the locked suit are legal while it holds.",
+                "The exception: an 8 of ANY suit played directly on another 8. That's how the lock changes hands — answer an 8 with an 8 and point it wherever you like.",
+                "Once any other card lands on top, the lock is binding again and an off-suit 8 is as dead as anything else.",
+                "A Queen ignores the lock entirely, whatever suit she is. Declare her an 8 to seize it — and she leaves an 8 face up, so the next player gets the same opening.",
                 "The lock breaks when somebody can't follow it and skips, or when a player is knocked out while it's up.",
             ]
         ),

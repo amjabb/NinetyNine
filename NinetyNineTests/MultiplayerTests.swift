@@ -12,16 +12,18 @@ import XCTest
 
 final class RedactionTests: XCTestCase {
 
-    private func engine(seats: Int = 3, handSize: Int = 6, seed: UInt32 = 4242) throws -> GameEngine {
+    private func engine(seats: Int = 3, cardsDealt: Int = 6, seed: UInt32 = 4242) throws -> GameEngine {
         let ids = ["a", "b", "c", "d", "e", "f"].prefix(seats)
-        return try GameEngine(
+        let engine = try GameEngine(
             seats: ids.enumerated().map { index, id in
                 (id, "Player\(index)", index == 0 ? .human : .ai(.sharp))
             },
             dealerIndex: seats - 1,
-            handSize: handSize,
+            cardsDealt: cardsDealt,
             seed: seed
         )
+        engine._finishWellSelectionForTesting()
+        return engine
     }
 
     // MARK: - The security boundary
@@ -125,13 +127,20 @@ final class RedactionTests: XCTestCase {
         let engine = try engine()
         let view = engine.state.view(for: "a")
 
-        XCTAssertEqual(view.yourHand.count, 6)
+        // Dealt six, two banked as the well, so four in hand — except whoever
+        // leads, who is topped up to the cap of five before they act.
+        let expected = engine.state.currentPlayer.id == "a" ? Rules.sustainingHandCap : 4
+        XCTAssertEqual(view.yourHand.count, expected)
         XCTAssertEqual(view.opponents.count, 2)
         XCTAssertEqual(view.seatingOrder, ["a", "b", "c"])
         XCTAssertEqual(view.currentPlayerID, engine.state.currentPlayer.id)
         XCTAssertEqual(view.tally, 0)
         for opponent in view.opponents {
-            XCTAssertEqual(opponent.handCount, 6, "You can count an opponent's cards across a table")
+            let theirs = opponent.id == engine.state.currentPlayer.id ? Rules.sustainingHandCap : 4
+            XCTAssertEqual(
+                opponent.handCount, theirs,
+                "You can count an opponent's cards across a table"
+            )
             XCTAssertEqual(opponent.wellCount, 2)
         }
     }
@@ -188,10 +197,12 @@ final class RedactionTests: XCTestCase {
 final class PlayerActionTests: XCTestCase {
 
     private func engine(seed: UInt32 = 31) throws -> GameEngine {
-        try GameEngine(
+        let engine = try GameEngine(
             seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
-            dealerIndex: 2, handSize: 6, seed: seed
+            dealerIndex: 2, cardsDealt: 6, seed: seed
         )
+        engine._finishWellSelectionForTesting()
+        return engine
     }
 
     func testActionsRoundTripThroughCoding() throws {
@@ -351,8 +362,9 @@ final class ReplayTests: XCTestCase {
     private func recordGame(seed: UInt32) throws -> (log: [SubmittedAction], finalTally: Int, winner: String?) {
         let engine = try GameEngine(
             seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
-            dealerIndex: 2, handSize: 6, seed: seed
+            dealerIndex: 2, cardsDealt: 6, seed: seed
         )
+        engine._finishWellSelectionForTesting()
         var log: [SubmittedAction] = []
         var sequence = 0
         var guardCount = 0
@@ -394,8 +406,9 @@ final class ReplayTests: XCTestCase {
 
             let replay = try GameEngine(
                 seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
-                dealerIndex: 2, handSize: 6, seed: seed
+                dealerIndex: 2, cardsDealt: 6, seed: seed
             )
+            replay._finishWellSelectionForTesting()
             for submitted in recorded.log {
                 try replay.apply(submitted)
             }
@@ -416,16 +429,18 @@ final class ReplayTests: XCTestCase {
 
         let replay = try GameEngine(
             seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
-            dealerIndex: 2, handSize: 6, seed: seed
+            dealerIndex: 2, cardsDealt: 6, seed: seed
         )
+        replay._finishWellSelectionForTesting()
         for submitted in recorded.log { try replay.apply(submitted) }
 
         // Compare the full serialised state, not just a summary — a summary
         // would hide exactly the kind of drift this test exists to catch.
         let first = try GameEngine(
             seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
-            dealerIndex: 2, handSize: 6, seed: seed
+            dealerIndex: 2, cardsDealt: 6, seed: seed
         )
+        first._finishWellSelectionForTesting()
         for submitted in recorded.log { try first.apply(submitted) }
 
         let encoder = JSONEncoder()

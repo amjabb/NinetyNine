@@ -52,12 +52,12 @@ struct SetupView: View {
 
     /// The hand-size ceiling depends on the player count, so it has to be
     /// recomputed live and the current choice clamped into it.
-    private var maxHandSize: Int {
-        Rules.maxHandSize(forPlayerCount: playerCount)
+    private var maxDeal: Int {
+        Rules.maxCardsDealt(forPlayerCount: playerCount)
     }
 
-    private var currentHandSize: Int {
-        min(max(settings.handSize, Rules.minHandSize), maxHandSize)
+    private var currentDeal: Int {
+        min(max(settings.cardsDealt, Rules.minCardsDealt), maxDeal)
     }
 
     var body: some View {
@@ -73,7 +73,7 @@ struct SetupView: View {
                         options: GameMode.allCases.map { ($0, $0.title) },
                         selection: $mode
                     )
-                    .onChange(of: mode) { _, _ in clampHandSize() }
+                    .onChange(of: mode) { _, _ in clampDeal() }
 
                     Text(mode.blurb)
                         .font(Typography.caption)
@@ -89,7 +89,7 @@ struct SetupView: View {
                             options: (1...5).map { ($0, "\($0)") },
                             selection: $settings.opponentCount
                         )
-                        .onChange(of: settings.opponentCount) { _, _ in clampHandSize() }
+                        .onChange(of: settings.opponentCount) { _, _ in clampDeal() }
 
                         BrassSegments(
                             title: "Difficulty",
@@ -107,13 +107,13 @@ struct SetupView: View {
                             options: (2...6).map { ($0, "\($0)") },
                             selection: $settings.localPlayerCount
                         )
-                        .onChange(of: settings.localPlayerCount) { _, _ in clampHandSize() }
+                        .onChange(of: settings.localPlayerCount) { _, _ in clampDeal() }
 
                         seatNames
                     }
 
                     if mode != .online {
-                        handSizeSection
+                        cardsDealtSection
                         dealSummary
                     }
                 }
@@ -227,9 +227,9 @@ struct SetupView: View {
         )
     }
 
-    private func clampHandSize() {
+    private func clampDeal() {
         // Clamp rather than silently allowing an illegal deal.
-        if settings.handSize > maxHandSize { settings.handSize = maxHandSize }
+        if settings.cardsDealt > maxDeal { settings.cardsDealt = maxDeal }
     }
 
     /// Name entry for each seat. Names matter far more here than in solo — the
@@ -284,40 +284,52 @@ struct SetupView: View {
         }
     }
 
-    private var handSizeSection: some View {
+    private var cardsDealtSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text("Hand size").labelStyle()
+                Text("Cards to deal").labelStyle()
                 Spacer()
-                Text("\(currentHandSize)")
+                Text("\(currentDeal)")
                     .font(Typography.counter(15, weight: .heavy))
                     .foregroundStyle(Palette.brassLight)
             }
-            // A stepper rather than a slider: the legal range is only 5-12 and
-            // every value matters, so precision beats sweep.
+            // A stepper rather than a slider: the legal range is small and every
+            // value matters, so precision beats sweep.
             HStack(spacing: 8) {
-                stepButton(icon: "minus", enabled: currentHandSize > Rules.minHandSize) {
-                    settings.handSize = max(Rules.minHandSize, currentHandSize - 1)
+                stepButton(icon: "minus", enabled: currentDeal > Rules.minCardsDealt) {
+                    settings.cardsDealt = max(Rules.minCardsDealt, currentDeal - 1)
                 }
-                handSizeTrack
-                stepButton(icon: "plus", enabled: currentHandSize < maxHandSize) {
-                    settings.handSize = min(maxHandSize, currentHandSize + 1)
+                cardsDealtTrack
+                stepButton(icon: "plus", enabled: currentDeal < maxDeal) {
+                    settings.cardsDealt = min(maxDeal, currentDeal + 1)
                 }
             }
-            Text("Up to \(maxHandSize) with \(playerCount) players — everyone also needs a two-card well.")
+            Text(dealExplanation)
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.ivoryFaint)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var handSizeTrack: some View {
+    /// The number isn't a hand size any more, and saying so is the difference
+    /// between "deal 5" being a reasonable choice and a baffling one.
+    private var dealExplanation: String {
+        let hand = currentDeal - Rules.wellSize
+        let topUp = hand < Rules.sustainingHandCap
+            ? " You'd draw up to \(Rules.sustainingHandCap) on your first turn."
+            : ""
+        return "Two of them go to your well, so you'd start holding \(hand).\(topUp) "
+            + "Up to \(maxDeal) with \(playerCount) players."
+    }
+
+    private var cardsDealtTrack: some View {
         GeometryReader { geometry in
-            let span = Rules.minHandSize...12
+            let span = Rules.minCardsDealt...12
             let count = span.count
             HStack(spacing: 3) {
                 ForEach(Array(span), id: \.self) { value in
-                    let isAvailable = value <= maxHandSize
-                    let isFilled = value <= currentHandSize
+                    let isAvailable = value <= maxDeal
+                    let isFilled = value <= currentDeal
                     RoundedRectangle(cornerRadius: 3)
                         .fill(isFilled
                             ? AnyShapeStyle(Palette.brassFace)
@@ -327,8 +339,8 @@ struct SetupView: View {
                 }
             }
             .frame(width: geometry.size.width)
-            .animation(Motion.panel, value: settings.handSize)
-            .animation(Motion.panel, value: maxHandSize)
+            .animation(Motion.panel, value: settings.cardsDealt)
+            .animation(Motion.panel, value: maxDeal)
             .accessibilityHidden(true)
             .onAppear { _ = count }
         }
@@ -355,14 +367,14 @@ struct SetupView: View {
                 .opacity(enabled ? 1 : 0.35)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(icon == "plus" ? "Increase hand size" : "Decrease hand size")
+        .accessibilityLabel(icon == "plus" ? "One more card to deal" : "One fewer card to deal")
     }
 
     /// Shows the arithmetic of the deal, because "why can't I pick 12?" is the
     /// obvious question and the answer is just a sum.
     private var dealSummary: some View {
         let players = playerCount
-        let hand = currentHandSize
+        let hand = currentDeal
         let dealt = players * (hand + 2)
         return VStack(alignment: .leading, spacing: 6) {
             Text("The deal").labelStyle()

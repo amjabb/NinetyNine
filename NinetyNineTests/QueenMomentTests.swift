@@ -17,7 +17,7 @@ final class QueenMomentTests: XCTestCase {
 
     private func table() async -> GameViewModel {
         let model = GameViewModel.solo(
-            difficulty: .sharp, opponentCount: 2, handSize: 6,
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 6,
             playerName: "You", dealerID: nil, seed: 1
         )
         await model.begin()

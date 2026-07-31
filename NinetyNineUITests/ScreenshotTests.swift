@@ -62,6 +62,7 @@ final class ScreenshotTests: XCTestCase {
 
         // 5 — The table, early and then under real pressure.
         app.buttons["Deal"].tap()
+        app.buildAllWells()
         XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10))
         Thread.sleep(forTimeInterval: 2.4)
         shot("store-6-table")
@@ -74,11 +75,16 @@ final class ScreenshotTests: XCTestCase {
             // Deal again and try once more; a 6-card hand holds at least one of
             // those ranks the large majority of the time.
             app.buttons["Pause"].tap()
-            app.buttons["Quit to menu"].tap()
+            // BrassButton composes its label from title + subtitle, so the pause
+            // menu's button reads "SDQ, Self Disqualify" rather than "SDQ".
+            app.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "SDQ")
+            ).firstMatch.tap()
             _ = playButton.waitForExistence(timeout: 5)
             playButton.tap()
             _ = app.buttons["Deal"].waitForExistence(timeout: 5)
             app.buttons["Deal"].tap()
+            app.buildAllWells()
             XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 10))
             Thread.sleep(forTimeInterval: 2.4)
             capturedSheet = captureDeclarationSheet()
@@ -156,7 +162,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private var isDeclarationSheetUp: Bool {
-        ["One, or eleven?", "Name the suit", "What is she copying?"]
+        ["One, or eleven?", "Lock a suit?", "What is she copying?"]
             .contains { app.staticTexts[$0].exists }
     }
 
@@ -174,7 +180,7 @@ final class ScreenshotTests: XCTestCase {
         guard isPlayersTurn else { return false }
         guard tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) else { return false }
         guard app.staticTexts["One, or eleven?"].waitForExistence(timeout: 2)
-                || app.staticTexts["Name the suit"].exists
+                || app.staticTexts["Lock a suit?"].exists
                 || app.staticTexts["What is she copying?"].exists
         else { return false }
 

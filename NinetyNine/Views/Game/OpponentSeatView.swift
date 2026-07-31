@@ -41,6 +41,12 @@ struct OpponentSeatView: View {
 
     // MARK: Avatar
 
+    private var seatRingStyle: AnyShapeStyle {
+        if isCurrent { return AnyShapeStyle(Palette.brassRing) }
+        if player.owesExtraPlay { return AnyShapeStyle(Palette.caution.opacity(0.85)) }
+        return AnyShapeStyle(Palette.ivoryFaint.opacity(0.5))
+    }
+
     private var avatar: some View {
         ZStack {
             // Fanned card backs behind the avatar, count-accurate up to five —
@@ -68,12 +74,11 @@ struct OpponentSeatView: View {
                 .font(.system(size: ringSize * 0.42, weight: .bold, design: .serif))
                 .foregroundStyle(player.isEliminated ? Palette.ivoryFaint : Palette.ivory)
 
-            // Seat ring: brass when it's their turn, dim otherwise.
+            // Seat ring: brass when it's their turn, dim otherwise — and amber
+            // when they're carrying a skip debt, so the seat itself reads as
+            // vulnerable from across the table rather than only in the badge.
             Circle()
-                .strokeBorder(
-                    isCurrent ? AnyShapeStyle(Palette.brassRing) : AnyShapeStyle(Palette.ivoryFaint.opacity(0.5)),
-                    lineWidth: isCurrent ? 2.5 : 1.2
-                )
+                .strokeBorder(seatRingStyle, lineWidth: isCurrent ? 2.5 : (player.owesExtraPlay ? 1.8 : 1.2))
                 .frame(width: ringSize, height: ringSize)
 
             // Thinking indicator: a brass arc sweeping the ring.
@@ -147,9 +152,21 @@ struct OpponentSeatView: View {
             }
 
             if player.owesExtraPlay {
-                Text("×2")
-                    .font(Typography.counter(9, weight: .heavy))
-                    .foregroundStyle(Palette.caution)
+                // A debt is public information and tactically the most useful
+                // thing on the table: this player skipped, so their next turn
+                // costs two plays and the player *before* them can squeeze it.
+                // A bare "×2" was too quiet for something that decides how the
+                // player in front of them plays.
+                HStack(spacing: 2) {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 7, weight: .bold))
+                    Text("OWES 2")
+                        .font(Typography.counter(9, weight: .heavy))
+                }
+                .foregroundStyle(Palette.feltEdge)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Palette.caution))
             }
         }
         .frame(height: 10)
@@ -160,7 +177,7 @@ struct OpponentSeatView: View {
         var parts = ["\(player.name), \(player.handCount) cards"]
         parts.append("\(player.wellCount) well \(player.wellCount == 1 ? "card" : "cards") left")
         if player.poisonCount > 0 { parts.append("\(player.poisonCount) poisoned queens") }
-        if player.owesExtraPlay { parts.append("owes two plays") }
+        if player.owesExtraPlay { parts.append("skipped, owes two plays next turn") }
         if isCurrent { parts.append("their turn") }
         return parts.joined(separator: ", ")
     }

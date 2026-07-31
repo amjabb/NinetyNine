@@ -154,16 +154,26 @@ enum Rules {
     /// left unable to hold a card at all.
     static let poisonedHandCapFloor = 1
 
-    // MARK: Hand-size limits
+    // MARK: What the dealer deals
 
-    /// Each player needs `handSize` cards plus a 2-card well, and the dealer may
-    /// spend the whole deck: players * (handSize + 2) <= 52.
-    static func maxHandSize(forPlayerCount count: Int) -> Int {
-        let uncapped = (52 / max(1, count)) - 2
-        return max(minHandSize, min(12, uncapped))
+    /// Cards set aside face-down as the well, chosen by the player from their
+    /// own deal.
+    static let wellSize = 2
+
+    /// The dealer names a number of cards to deal. **Two of them become the
+    /// well**, so the opening hand is `cardsDealt - 2` — deal 7 and you start
+    /// with five in hand, deal 5 and you start with three and draw up to five on
+    /// your first turn.
+    ///
+    /// This is why the number isn't called "hand size": it stopped being one.
+    static func maxCardsDealt(forPlayerCount count: Int) -> Int {
+        let uncapped = 52 / max(1, count)
+        return max(minCardsDealt, min(12, uncapped))
     }
 
-    static let minHandSize = 5
+    /// Two go to the well, so three is the smallest deal that leaves a hand at
+    /// all. Anything less and a player opens holding nothing.
+    static let minCardsDealt = wellSize + 1
 
     // MARK: Core resolution
 
@@ -175,8 +185,8 @@ enum Rules {
         in state: GameState
     ) -> Result<CardEffect, IllegalReason> {
 
-        // A Queen borrows another rank's value *and* ability, but keeps its own
-        // suit for suit-lock purposes.
+        // A Queen borrows another rank's value *and* ability. Her printed suit
+        // is irrelevant to the lock — see the lock check below.
         let effectiveRank: Rank
         if card.rank == .queen {
             guard let impersonated = declaration.queenAs, impersonated != .queen else {
@@ -266,9 +276,18 @@ enum Rules {
             return .failure(.cannotGoNegativeExceptFromZero(resulting: newTally))
         }
 
-        // A Queen is wild for *suit* as well as rank, so a lock never blocks
-        // one. Every other card is judged on its printed suit.
-        if let lock = state.suitLock, card.rank != .queen, card.suit != lock.suit {
+        // Two things get past a lock:
+        //
+        //  * a Queen, which is wild for *suit* as well as rank;
+        //  * an 8 of any suit played **directly on another 8** — that's how the
+        //    lock changes hands. An 8 played on anything else has to follow the
+        //    lock like everything else, so a lock can't be shrugged off at any
+        //    point by whoever happens to be holding one.
+        //
+        // Everything else is judged on its printed suit.
+        let ignoresLock = card.rank == .queen
+            || (effectiveRank == .eight && state.topPlayedAsEight)
+        if let lock = state.suitLock, !ignoresLock, card.suit != lock.suit {
             return .failure(.suitLocked(lock.suit))
         }
 
@@ -366,6 +385,14 @@ enum Rules {
             case .success(let step):
                 if step.reversesDirection { reversals += 1 }
                 running.tally = step.newTally
+                // Each card in the run lands on the one before it, so a run of
+                // 8s keeps the door open for the next 8 in the same run.
+                running.topPlayedAsEight = step.effectiveRank == .eight
+                if let locked = step.locksSuit {
+                    running.suitLock = SuitLock(suit: locked, setByPlayerID: "")
+                } else if step.liftsSuitLock {
+                    running.suitLock = nil
+                }
                 // A 9 clears the pending-nine window for the card after it, so
                 // the sequence has to carry that too.
                 running.pendingNineSuit = step.isNine ? card.suit : nil

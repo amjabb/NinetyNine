@@ -12,7 +12,7 @@ import Foundation
 
 enum GameEvent: Equatable, Sendable {
     // Setup
-    case dealt(handSize: Int)
+    case dealt(cardsDealt: Int)
 
     // Ordinary play
     case cardPlayed(card: Card, by: String, effect: CardEffect)
@@ -23,6 +23,10 @@ enum GameEvent: Equatable, Sendable {
     case nineSlammed(to: Int)
     case hundredReached
     case forcedNegativeConsumed
+
+    // Choosing a well
+    case wellChosen(by: String, count: Int)
+    case wellSelectionFinished
 
     // Drawing
     case drewCards(count: Int, by: String)

@@ -70,8 +70,8 @@ final class MatchCoordinator: ObservableObject {
 
     private func handle(_ update: MatchUpdate) {
         switch update {
-        case .started(let participants, let seed, let handSize):
-            begin(participants: participants, seed: seed, handSize: handSize)
+        case .started(let participants, let seed, let cardsDealt):
+            begin(participants: participants, seed: seed, cardsDealt: cardsDealt)
 
         case .action(let submitted):
             applyRemote(submitted)
@@ -87,7 +87,7 @@ final class MatchCoordinator: ObservableObject {
         }
     }
 
-    private func begin(participants: [MatchParticipant], seed: UInt32, handSize: Int) {
+    private func begin(participants: [MatchParticipant], seed: UInt32, cardsDealt: Int) {
         self.participants = participants
         self.matchSeed = seed
         do {
@@ -96,7 +96,7 @@ final class MatchCoordinator: ObservableObject {
                 // The dealer is the last seat so play opens on the first — a
                 // match should never begin by making someone watch.
                 dealerIndex: participants.count - 1,
-                handSize: handSize,
+                cardsDealt: cardsDealt,
                 seed: seed
             )
             refreshView()
@@ -172,7 +172,7 @@ final class MatchCoordinator: ObservableObject {
         let scratch = try GameEngine(
             seats: participants.map { ($0.id, $0.name, $0.enginePlayerKind) },
             dealerIndex: participants.count - 1,
-            handSize: engine.state.handSize,
+            cardsDealt: engine.state.cardsDealt,
             seed: matchSeed
         )
         for entry in actionLog { try scratch.apply(entry) }
@@ -189,25 +189,42 @@ final class MatchCoordinator: ObservableObject {
     /// would fight the animation choreography for control of the pacing.
     var autoDriveAI = true
 
-    /// True when the seat to play is driven by AI in this process.
+    /// Whoever the game is waiting on.
+    ///
+    /// Usually the player whose turn it is — but at the start of a game it's
+    /// whoever still owes a well, and that runs on its own order. Everything
+    /// that asks "whose move is it" has to ask this rather than
+    /// `currentPlayer`, or the opening phase drives the wrong seat.
+    var activeSeatID: String? {
+        guard let engine, !engine.state.isOver else { return nil }
+        return engine.state.wellChooserID ?? engine.state.currentPlayer.id
+    }
+
+    /// True when the seat the game is waiting on is driven by AI in this process.
     var isAITurn: Bool {
-        guard let engine, !engine.state.isOver else { return false }
-        return participants
-            .first { $0.id == engine.state.currentPlayer.id }?
-            .kind.difficulty != nil
+        guard let engine, !engine.state.isOver, let active = activeSeatID else { return false }
+        return participants.first { $0.id == active }?.kind.difficulty != nil
     }
 
     /// Take exactly one AI action, if it's an AI's turn. Returns the events it
     /// produced, or nil if there was nothing to do.
     @discardableResult
     func stepAI() -> [GameEvent]? {
-        guard let engine, !engine.state.isOver else { return nil }
-        let currentID = engine.state.currentPlayer.id
+        guard let engine, !engine.state.isOver, let currentID = activeSeatID else { return nil }
         guard let participant = participants.first(where: { $0.id == currentID }),
               let difficulty = participant.kind.difficulty
         else { return nil }
 
         let ai = AIPlayer(difficulty: difficulty)
+
+        // Before anything else, the opening: bank two cards.
+        if engine.state.isChoosingWells {
+            guard let seat = engine.state.index(of: currentID) else { return nil }
+            // Only the count — an AI that looked at the faces would be cheating
+            // at a decision the human makes blind.
+            let slots = ai.chooseWellSlots(dealtCount: engine.state.players[seat].hand.count)
+            return applyLocally(.chooseWell(slots: slots), by: currentID)
+        }
         guard let move = ai.nextMove(for: currentID, engine: engine) else { return nil }
 
         let action: PlayerAction
@@ -227,12 +244,7 @@ final class MatchCoordinator: ObservableObject {
             action = engine.state.pendingWell != nil ? .concedeWellCard : .concede
         }
 
-        let submitted = SubmittedAction(playerID: currentID, action: action, sequence: sequence)
-        sequence += 1
-        guard let events = try? engine.apply(submitted) else { return nil }
-        actionLog.append(submitted)
-        absorb(events)
-        return events
+        return applyLocally(action, by: currentID)
     }
 
     /// How long the current AI seat should appear to think.
@@ -242,6 +254,19 @@ final class MatchCoordinator: ObservableObject {
                 .first(where: { $0.id == engine.state.currentPlayer.id })?.kind.difficulty
         else { return 0.5...0.8 }
         return AIPlayer(difficulty: difficulty).thinkingDelay
+    }
+
+    /// Apply an AI's move straight to the engine and log it. AI seats live in
+    /// this process, so there's nothing to send anywhere.
+    @discardableResult
+    private func applyLocally(_ action: PlayerAction, by playerID: String) -> [GameEvent]? {
+        guard let engine else { return nil }
+        let submitted = SubmittedAction(playerID: playerID, action: action, sequence: sequence)
+        sequence += 1
+        guard let events = try? engine.apply(submitted) else { return nil }
+        actionLog.append(submitted)
+        absorb(events)
+        return events
     }
 
     /// Play out consecutive AI turns with their own pacing. Only used when
@@ -313,23 +338,26 @@ final class MatchCoordinator: ObservableObject {
             awaitingHandoff = false
             return
         }
-        let current = engine.state.currentPlayer.id
+        guard let current = activeSeatID else {
+            awaitingHandoff = false
+            return
+        }
         let isLocalHuman = participants.first(where: { $0.id == current })?.kind.isLocalHuman == true
         awaitingHandoff = isLocalHuman && current != acknowledgedViewerID
     }
 
     /// The next player has confirmed they're holding the device.
     func acknowledgeHandoff() {
-        guard let engine else { return }
-        acknowledgedViewerID = engine.state.currentPlayer.id
+        guard engine != nil, let active = activeSeatID else { return }
+        acknowledgedViewerID = active
         awaitingHandoff = false
         refreshView()
     }
 
     /// Name of whoever the device should be handed to.
     var handoffTargetName: String? {
-        guard let engine else { return nil }
-        return participants.first { $0.id == engine.state.currentPlayer.id }?.name
+        guard let active = activeSeatID else { return nil }
+        return participants.first { $0.id == active }?.name
     }
 
     // MARK: Convenience for the UI
