@@ -157,6 +157,10 @@ enum MatchError: Error, LocalizedError, Equatable {
     case notAuthenticated
     case matchmakingFailed(String)
     case unsupported
+    /// The match was created by a build whose rules deal differently. Its log
+    /// would still *apply* cleanly here and simply produce a different game, so
+    /// this has to be refused rather than tolerated.
+    case incompatibleRules
 
     var errorDescription: String? {
         switch self {
@@ -164,6 +168,9 @@ enum MatchError: Error, LocalizedError, Equatable {
             return "That move couldn't be sent. Check your connection and try again."
         case .notAuthenticated:
             return "Sign in to Game Center to play online."
+        case .incompatibleRules:
+            return "This match was started in an older version of 99. "
+                + "Everyone needs to update before it can continue."
         case .matchmakingFailed(let detail):
             return "Couldn't find a match: \(detail)"
         case .unsupported:

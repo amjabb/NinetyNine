@@ -92,23 +92,28 @@ final class SetPlayUITests: XCTestCase {
     /// that would make the whole hand feel broken.
     func testAPlainTapStillPlaysASingleCard() throws {
         startAGame()
-        let handBefore = handCards.count
 
+        var tapped: String?
         for card in handCards where card.isHittable {
             guard (card.value as? String) == "Playable" else { continue }
+            tapped = card.identifier
             card.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.62)).tap()
             break
         }
+        let played = try XCTUnwrap(tapped, "The opening hand should hold a playable card")
 
         XCTAssertFalse(
             app.otherElements["set-play-sheet"].waitForExistence(timeout: 1.5),
             "A tap must never open the run builder"
         )
-        // Either the card went straight down, or it asked for a declaration —
-        // both mean the tap was heard.
+        // Assert on the card, not on the hand *size* — the hand refills to the
+        // cap, so the count is back where it started a moment later and would
+        // pass whether or not anything was played.
         XCTAssertTrue(
-            waitFor { self.handCards.count != handBefore || self.app.buttons["Back"].exists },
-            "A tap on a playable card should play it"
+            waitFor {
+                !self.app.buttons[played].exists || self.app.buttons["Back"].exists
+            },
+            "\(played) should have left the hand, or asked how to play it"
         )
     }
 
@@ -117,7 +122,8 @@ final class SetPlayUITests: XCTestCase {
     private func startAGame() {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Play")).firstMatch.tap()
         app.buttons["Deal"].tap()
-        _ = app.otherElements["Tally"].waitForExistence(timeout: 10)
+        app.buildAllWells()
+        _ = app.otherElements["Tally"].waitForExistence(timeout: 12)
         Thread.sleep(forTimeInterval: 2.2)
     }
 

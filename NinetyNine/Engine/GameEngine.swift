@@ -167,6 +167,11 @@ final class GameEngine {
 
         state.tally = effect.newTally
         state.discardPile.append(card)
+        // Whether the *new* face-up card counts as an 8 — which is what decides
+        // if the next player may take the lock over with an off-suit 8. A Queen
+        // declared as an 8 counts, so she can be used to seize a lock and then
+        // hand the same opportunity on.
+        state.topPlayedAsEight = effect.effectiveRank == .eight
         events.append(.cardPlayed(card: card, by: playerID, effect: effect))
 
         if state.forcedNegativeNext {
@@ -352,9 +357,11 @@ final class GameEngine {
     /// `chooseWell` properly.
     func _finishWellSelectionForTesting() {
         while let chooser = state.wellChooserID, let seat = state.index(of: chooser) {
-            let ids = state.players[seat].hand.prefix(Rules.wellSize).map(\.id)
-            guard ids.count == Rules.wellSize else { state.wellSelectionQueue.removeFirst(); continue }
-            _ = try? chooseWell(cardIDs: Array(ids), by: chooser)
+            guard state.players[seat].hand.count >= Rules.wellSize else {
+                state.wellSelectionQueue.removeFirst()
+                continue
+            }
+            _ = try? chooseWell(slots: Array(0..<Rules.wellSize), by: chooser)
         }
     }
     #endif
@@ -365,19 +372,30 @@ final class GameEngine {
     /// once, before the first card is played.
     ///
     /// The cards leave the hand rather than being drawn separately, which is the
-    /// whole point of the rule: what you bank is what you give up holding.
+    /// point of the rule: what you bank is what you give up holding. And it's
+    /// **blind** — you pick two positions out of a face-down deal, so the well
+    /// stays a real unknown until you're forced to turn one over. Seeing them
+    /// would tell you your outs from the first turn and flatten the one moment
+    /// the well exists for.
+    ///
+    /// Positions rather than card IDs for a second reason: this action goes into
+    /// the shared log every peer reads, and a well card must stay hidden for the
+    /// whole game.
     @discardableResult
-    func chooseWell(cardIDs: [Int], by playerID: String) throws -> [GameEvent] {
+    func chooseWell(slots: [Int], by playerID: String) throws -> [GameEvent] {
         guard state.isChoosingWells else { throw GameError.notChoosingWells }
         guard state.wellChooserID == playerID else { throw GameError.notYourTurn }
         guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
 
-        let unique = Set(cardIDs)
-        guard unique.count == Rules.wellSize, cardIDs.count == Rules.wellSize else {
+        let unique = Set(slots)
+        guard unique.count == Rules.wellSize, slots.count == Rules.wellSize else {
             throw GameError.wrongWellSize(expected: Rules.wellSize)
         }
-        let chosen = cardIDs.compactMap { id in state.players[seat].hand.first { $0.id == id } }
-        guard chosen.count == Rules.wellSize else { throw GameError.cardNotInHand }
+        let hand = state.players[seat].hand
+        guard slots.allSatisfy({ hand.indices.contains($0) }) else {
+            throw GameError.cardNotInHand
+        }
+        let chosen = slots.map { hand[$0] }
 
         for card in chosen {
             state.players[seat].hand.removeAll { $0.id == card.id }

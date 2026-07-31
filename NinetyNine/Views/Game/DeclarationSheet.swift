@@ -19,6 +19,9 @@ struct DeclarationSheet: View {
     let onCancel: () -> Void
 
     @Environment(\.motion) private var motion
+    /// Which rank a Queen is being played as, once that's been picked and the
+    /// sheet still needs a second answer.
+    @State private var queenRank: Rank?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,7 +82,7 @@ struct DeclarationSheet: View {
     private var title: String {
         switch choice.card.rank {
         case .ace: return "One, or eleven?"
-        case .eight: return "Name the suit"
+        case .eight: return "Lock a suit?"
         case .queen: return "What is she copying?"
         default: return "Choose how to play it"
         }
@@ -103,14 +106,16 @@ struct DeclarationSheet: View {
             }
 
         case .eight:
-            HStack(spacing: 10) {
-                ForEach(suitOptions, id: \.self) { declaration in
-                    suitTile(declaration)
-                }
-            }
+            lockOptions
 
         case .queen:
-            queenGrid
+            // Copying a rank can itself need an answer — an Ace's value, an 8's
+            // suit — so the Queen resolves in two steps rather than guessing.
+            if let rank = queenRank {
+                queenFollowUp(for: rank)
+            } else {
+                queenGrid
+            }
 
         default:
             VStack(spacing: 10) {
@@ -125,8 +130,92 @@ struct DeclarationSheet: View {
         choice.options.filter { $0.aceValue != nil && $0.queenAs == nil }
     }
 
-    private var suitOptions: [Declaration] {
-        choice.options.filter { $0.lockSuit != nil && $0.queenAs == nil }
+    private func suitOptions(queenAs: Rank? = nil) -> [Declaration] {
+        choice.options.filter { $0.lockSuit != nil && $0.queenAs == queenAs }
+    }
+
+    /// Locking is optional — an 8 may be played and lock nothing. This is the
+    /// option the sheet used to drop on the floor: it filtered the list on
+    /// `lockSuit != nil`, and declining a lock has no suit by definition.
+    private func declineOption(queenAs: Rank? = nil) -> Declaration? {
+        choice.options.first { $0.declinesLock && $0.queenAs == queenAs }
+    }
+
+    /// Four suits, and the choice not to lock at all.
+    @ViewBuilder
+    private func lockChoices(queenAs: Rank? = nil) -> some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                ForEach(suitOptions(queenAs: queenAs), id: \.self) { declaration in
+                    suitTile(declaration)
+                }
+            }
+            if let decline = declineOption(queenAs: queenAs) {
+                Button {
+                    Haptics.shared.play(.select)
+                    onChoose(decline)
+                } label: {
+                    VStack(spacing: 2) {
+                        Text("Lock nothing")
+                            .font(Typography.bodyEmphasised)
+                            .foregroundStyle(Palette.ivory)
+                        Text("Play the 8 and leave the suit open")
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.ivoryDim)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.white.opacity(0.07))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Palette.brassDeep.opacity(0.5), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("declaration-lock-nothing")
+                .accessibilityLabel("Leave the suit open")
+            }
+        }
+    }
+
+    private var lockOptions: some View { lockChoices() }
+
+    /// The second step for a Queen whose copied rank still needs an answer.
+    @ViewBuilder
+    private func queenFollowUp(for rank: Rank) -> some View {
+        VStack(spacing: 12) {
+            Text("She's an \(rank.displayName). Now what?")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.ivoryDim)
+
+            switch rank {
+            case .eight:
+                lockChoices(queenAs: .eight)
+            case .ace:
+                HStack(spacing: 12) {
+                    ForEach(choice.options.filter { $0.queenAs == .ace }, id: \.self) { declaration in
+                        optionTile(
+                            headline: declaration.aceValue == .one ? "1" : "11",
+                            caption: nil,
+                            declaration: declaration,
+                            isWide: true
+                        )
+                    }
+                }
+            default:
+                EmptyView()
+            }
+
+            Button("Pick a different card") {
+                Haptics.shared.play(.select)
+                withAnimation(motion.animation(Motion.panel)) { queenRank = nil }
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.ivoryDim)
+        }
     }
 
     /// A Queen can be almost anything, so the options are grouped by the rank
@@ -150,13 +239,21 @@ struct DeclarationSheet: View {
         // Prefer the option that keeps the tally lowest — the safest reading of
         // an ambiguous rank, and the one shown on the tile.
         let candidates = choice.options.filter { $0.queenAs == rank }
+        // An 8 needs a suit (or an explicit refusal) and an Ace needs a value.
+        // Those aren't ties to be broken by tally — the sheet used to pick one
+        // silently, which meant a Queen played as an 8 never asked at all.
+        let needsFollowUp = rank == .eight || rank == .ace
         let best = candidates.min { lhs, rhs in
             (projected(lhs) ?? .max) < (projected(rhs) ?? .max)
         }
         if let best {
             Button {
                 Haptics.shared.play(.select)
-                onChoose(best)
+                if needsFollowUp {
+                    withAnimation(motion.animation(Motion.panel)) { queenRank = rank }
+                } else {
+                    onChoose(best)
+                }
             } label: {
                 VStack(spacing: 2) {
                     Text(rank.label)

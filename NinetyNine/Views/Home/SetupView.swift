@@ -287,14 +287,14 @@ struct SetupView: View {
     private var cardsDealtSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text("Hand size").labelStyle()
+                Text("Cards to deal").labelStyle()
                 Spacer()
                 Text("\(currentDeal)")
                     .font(Typography.counter(15, weight: .heavy))
                     .foregroundStyle(Palette.brassLight)
             }
-            // A stepper rather than a slider: the legal range is only 5-12 and
-            // every value matters, so precision beats sweep.
+            // A stepper rather than a slider: the legal range is small and every
+            // value matters, so precision beats sweep.
             HStack(spacing: 8) {
                 stepButton(icon: "minus", enabled: currentDeal > Rules.minCardsDealt) {
                     settings.cardsDealt = max(Rules.minCardsDealt, currentDeal - 1)
@@ -304,10 +304,22 @@ struct SetupView: View {
                     settings.cardsDealt = min(maxDeal, currentDeal + 1)
                 }
             }
-            Text("Up to \(maxDeal) with \(playerCount) players — everyone also needs a two-card well.")
+            Text(dealExplanation)
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.ivoryFaint)
+                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// The number isn't a hand size any more, and saying so is the difference
+    /// between "deal 5" being a reasonable choice and a baffling one.
+    private var dealExplanation: String {
+        let hand = currentDeal - Rules.wellSize
+        let topUp = hand < Rules.sustainingHandCap
+            ? " You'd draw up to \(Rules.sustainingHandCap) on your first turn."
+            : ""
+        return "Two of them go to your well, so you'd start holding \(hand).\(topUp) "
+            + "Up to \(maxDeal) with \(playerCount) players."
     }
 
     private var cardsDealtTrack: some View {
@@ -355,7 +367,7 @@ struct SetupView: View {
                 .opacity(enabled ? 1 : 0.35)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(icon == "plus" ? "Increase hand size" : "Decrease hand size")
+        .accessibilityLabel(icon == "plus" ? "One more card to deal" : "One fewer card to deal")
     }
 
     /// Shows the arithmetic of the deal, because "why can't I pick 12?" is the

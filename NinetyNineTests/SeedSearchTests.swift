@@ -23,6 +23,14 @@ final class SeedSearchTests: XCTestCase {
             playerName: "You", dealerID: nil, seed: seed
         )
         await model.begin()
+        // The deal is face down until the well is banked, so a test that wants
+        // to look at a hand has to get through the blind pick first.
+        var guardCount = 0
+        while model.view?.youAreChoosingYourWell == true && guardCount < 8 {
+            guardCount += 1
+            model.chooseWell(slots: [0, 1])
+            try? await Task.sleep(for: .milliseconds(120))
+        }
         return model.view
     }
 

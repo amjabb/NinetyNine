@@ -185,8 +185,8 @@ enum Rules {
         in state: GameState
     ) -> Result<CardEffect, IllegalReason> {
 
-        // A Queen borrows another rank's value *and* ability, but keeps its own
-        // suit for suit-lock purposes.
+        // A Queen borrows another rank's value *and* ability. Her printed suit
+        // is irrelevant to the lock — see the lock check below.
         let effectiveRank: Rank
         if card.rank == .queen {
             guard let impersonated = declaration.queenAs, impersonated != .queen else {
@@ -276,9 +276,18 @@ enum Rules {
             return .failure(.cannotGoNegativeExceptFromZero(resulting: newTally))
         }
 
-        // A Queen is wild for *suit* as well as rank, so a lock never blocks
-        // one. Every other card is judged on its printed suit.
-        if let lock = state.suitLock, card.rank != .queen, card.suit != lock.suit {
+        // Two things get past a lock:
+        //
+        //  * a Queen, which is wild for *suit* as well as rank;
+        //  * an 8 of any suit played **directly on another 8** — that's how the
+        //    lock changes hands. An 8 played on anything else has to follow the
+        //    lock like everything else, so a lock can't be shrugged off at any
+        //    point by whoever happens to be holding one.
+        //
+        // Everything else is judged on its printed suit.
+        let ignoresLock = card.rank == .queen
+            || (effectiveRank == .eight && state.topPlayedAsEight)
+        if let lock = state.suitLock, !ignoresLock, card.suit != lock.suit {
             return .failure(.suitLocked(lock.suit))
         }
 
@@ -376,6 +385,14 @@ enum Rules {
             case .success(let step):
                 if step.reversesDirection { reversals += 1 }
                 running.tally = step.newTally
+                // Each card in the run lands on the one before it, so a run of
+                // 8s keeps the door open for the next 8 in the same run.
+                running.topPlayedAsEight = step.effectiveRank == .eight
+                if let locked = step.locksSuit {
+                    running.suitLock = SuitLock(suit: locked, setByPlayerID: "")
+                } else if step.liftsSuitLock {
+                    running.suitLock = nil
+                }
                 // A 9 clears the pending-nine window for the card after it, so
                 // the sequence has to carry that too.
                 running.pendingNineSuit = step.isNine ? card.suit : nil

@@ -106,6 +106,14 @@ struct GameState: Codable, Sendable {
     var drawPile: [Card] = []
 
     var suitLock: SuitLock?
+    /// True when the card currently face up on the pile was played as an 8
+    /// (including a Queen impersonating one).
+    ///
+    /// This is what lets an 8 of the wrong suit take over a lock: you may only
+    /// move the lock by playing an 8 *directly on* another 8. Once anything else
+    /// has landed on top, the lock is binding again and an off-suit 8 is as dead
+    /// as any other off-suit card.
+    var topPlayedAsEight: Bool = false
     /// True in the single slot right after the tally hits 100.
     var forcedNegativeNext: Bool = false
     /// Suit of a 9 played as the immediately-previous card — the only window

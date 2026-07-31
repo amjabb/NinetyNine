@@ -41,17 +41,17 @@ final class WellSelectionTests: XCTestCase {
         XCTAssertEqual(engine.state.wellChooserID, "a")
     }
 
-    func testBankingTakesTheChosenCardsOutOfTheHand() throws {
+    func testBankingTakesTheChosenPositionsOutOfTheHand() throws {
         let engine = try dealt(7)
         let before = try XCTUnwrap(engine.state.player(id: "a")).hand
-        let banked = [before[0].id, before[3].id]
+        let expected = [before[0].id, before[3].id]
 
-        let events = try engine.chooseWell(cardIDs: banked, by: "a")
+        let events = try engine.chooseWell(slots: [0, 3], by: "a")
 
         let after = try XCTUnwrap(engine.state.player(id: "a"))
         XCTAssertEqual(after.hand.count, 5, "Seven dealt, two banked")
-        XCTAssertEqual(Set(after.well.map(\.id)), Set(banked))
-        for id in banked {
+        XCTAssertEqual(Set(after.well.map(\.id)), Set(expected))
+        for id in expected {
             XCTAssertFalse(after.hand.contains { $0.id == id }, "A banked card can't still be in hand")
         }
         XCTAssertTrue(events.contains(.wellChosen(by: "a", count: 2)))
@@ -65,35 +65,35 @@ final class WellSelectionTests: XCTestCase {
         ) { XCTAssertEqual($0 as? GameError, .notChoosingWells) }
 
         for id in ["a", "b", "c"] {
-            let hand = try XCTUnwrap(engine.state.player(id: id)).hand
-            try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id], by: id)
+            try engine.chooseWell(slots: [0, 1], by: id)
         }
         XCTAssertFalse(engine.state.isChoosingWells)
     }
 
     func testOnlyTheQueuedPlayerMayBank() throws {
         let engine = try dealt(7)
-        let b = try XCTUnwrap(engine.state.player(id: "b"))
         XCTAssertThrowsError(
-            try engine.chooseWell(cardIDs: [b.hand[0].id, b.hand[1].id], by: "b")
+            try engine.chooseWell(slots: [0, 1], by: "b")
         ) { XCTAssertEqual($0 as? GameError, .notYourTurn) }
     }
 
-    func testYouMustBankExactlyTwoDistinctCardsYouHold() throws {
+    func testYouMustBankExactlyTwoDistinctPositionsYouWereDealt() throws {
         let engine = try dealt(7)
-        let hand = try XCTUnwrap(engine.state.player(id: "a")).hand
 
-        XCTAssertThrowsError(try engine.chooseWell(cardIDs: [hand[0].id], by: "a")) {
+        XCTAssertThrowsError(try engine.chooseWell(slots: [0], by: "a")) {
             XCTAssertEqual($0 as? GameError, .wrongWellSize(expected: 2))
         }
-        XCTAssertThrowsError(
-            try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id, hand[2].id], by: "a")
-        ) { XCTAssertEqual($0 as? GameError, .wrongWellSize(expected: 2)) }
-        // The same card twice is not two cards.
-        XCTAssertThrowsError(try engine.chooseWell(cardIDs: [hand[0].id, hand[0].id], by: "a")) {
+        XCTAssertThrowsError(try engine.chooseWell(slots: [0, 1, 2], by: "a")) {
             XCTAssertEqual($0 as? GameError, .wrongWellSize(expected: 2))
         }
-        XCTAssertThrowsError(try engine.chooseWell(cardIDs: [hand[0].id, 9_999], by: "a")) {
+        // The same position twice is not two cards.
+        XCTAssertThrowsError(try engine.chooseWell(slots: [0, 0], by: "a")) {
+            XCTAssertEqual($0 as? GameError, .wrongWellSize(expected: 2))
+        }
+        XCTAssertThrowsError(try engine.chooseWell(slots: [0, 99], by: "a")) {
+            XCTAssertEqual($0 as? GameError, .cardNotInHand)
+        }
+        XCTAssertThrowsError(try engine.chooseWell(slots: [0, -1], by: "a")) {
             XCTAssertEqual($0 as? GameError, .cardNotInHand)
         }
         // And the hand is untouched by any of those refusals.
@@ -102,10 +102,9 @@ final class WellSelectionTests: XCTestCase {
 
     func testBankingTwiceIsRefused() throws {
         let engine = try dealt(7)
-        let hand = try XCTUnwrap(engine.state.player(id: "a")).hand
-        try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id], by: "a")
+        try engine.chooseWell(slots: [0, 1], by: "a")
         XCTAssertThrowsError(
-            try engine.chooseWell(cardIDs: [hand[2].id, hand[3].id], by: "a")
+            try engine.chooseWell(slots: [0, 1], by: "a")
         ) { XCTAssertEqual($0 as? GameError, .notYourTurn) }
     }
 
@@ -116,9 +115,8 @@ final class WellSelectionTests: XCTestCase {
     func testASmallDealOpensShortAndIsToppedUpOnTheFirstTurn() throws {
         let engine = try dealt(5)
         for id in ["a", "b", "c"] {
-            let hand = try XCTUnwrap(engine.state.player(id: id)).hand
-            XCTAssertEqual(hand.count, 5)
-            try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id], by: id)
+            XCTAssertEqual(try XCTUnwrap(engine.state.player(id: id)).hand.count, 5)
+            try engine.chooseWell(slots: [0, 1], by: id)
         }
 
         let leader = engine.state.currentPlayer
@@ -135,8 +133,7 @@ final class WellSelectionTests: XCTestCase {
     func testEveryPlayerIsToppedUpWhenTheirTurnArrives() throws {
         let engine = try dealt(5)
         for id in ["a", "b", "c"] {
-            let hand = try XCTUnwrap(engine.state.player(id: id)).hand
-            try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id], by: id)
+            try engine.chooseWell(slots: [0, 1], by: id)
         }
         let leader = engine.state.currentPlayer.id
         // Force the turn on without caring how.
@@ -151,9 +148,8 @@ final class WellSelectionTests: XCTestCase {
     /// three. That's the cost of a tight deal, and it should be visible.
     func testTheSmallestDealLeavesNoChoice() throws {
         let engine = try dealt(3)
-        let hand = try XCTUnwrap(engine.state.player(id: "a")).hand
-        XCTAssertEqual(hand.count, 3)
-        try engine.chooseWell(cardIDs: [hand[0].id, hand[1].id], by: "a")
+        XCTAssertEqual(try XCTUnwrap(engine.state.player(id: "a")).hand.count, 3)
+        try engine.chooseWell(slots: [0, 1], by: "a")
         XCTAssertEqual(try XCTUnwrap(engine.state.player(id: "a")).hand.count, 1)
     }
 
@@ -171,10 +167,9 @@ final class WellSelectionTests: XCTestCase {
         var log: [SubmittedAction] = []
         var sequence = 0
         for id in ["a", "b", "c"] {
-            let hand = try XCTUnwrap(source.state.player(id: id)).hand
             // Deliberately not the first two, so a replay that ignored the
             // action and guessed would land somewhere else.
-            let action = PlayerAction.chooseWell(cardIDs: [hand[2].id, hand[4].id])
+            let action = PlayerAction.chooseWell(slots: [2, 4])
             let submitted = SubmittedAction(playerID: id, action: action, sequence: sequence)
             sequence += 1
             try source.apply(submitted)
@@ -191,37 +186,122 @@ final class WellSelectionTests: XCTestCase {
 
     // MARK: - The AI's choice
 
-    func testEveryDifficultyBanksTwoCardsItActuallyHolds() throws {
-        let engine = try dealt(9)
-        let hand = try XCTUnwrap(engine.state.player(id: "a")).hand
+    func testEveryDifficultyBanksTwoPositionsItWasDealt() {
         for difficulty in Difficulty.allCases {
-            let chosen = AIPlayer(difficulty: difficulty).chooseWell(from: hand)
+            let chosen = AIPlayer(difficulty: difficulty).chooseWellSlots(dealtCount: 9)
             XCTAssertEqual(chosen.count, 2, "\(difficulty) banked \(chosen.count)")
-            XCTAssertEqual(Set(chosen).count, 2, "\(difficulty) banked the same card twice")
-            for id in chosen {
-                XCTAssertTrue(hand.contains { $0.id == id }, "\(difficulty) banked a card it doesn't hold")
+            XCTAssertEqual(Set(chosen).count, 2, "\(difficulty) banked the same position twice")
+            for slot in chosen {
+                XCTAssertTrue((0..<9).contains(slot), "\(difficulty) picked slot \(slot) out of nine")
             }
         }
     }
 
-    func testAThinHandIsBankedWholeRatherThanCrashing() {
-        let two = [Card(id: 1, rank: .king, suit: .spades), Card(id: 2, rank: .four, suit: .hearts)]
+    func testAThinDealIsBankedWholeRatherThanCrashing() {
         for difficulty in Difficulty.allCases {
-            XCTAssertEqual(Set(AIPlayer(difficulty: difficulty).chooseWell(from: two)), [1, 2])
+            XCTAssertEqual(Set(AIPlayer(difficulty: difficulty).chooseWellSlots(dealtCount: 2)), [0, 1])
         }
     }
 
-    /// Sharp insures itself: it banks the cards most likely to still be legal
-    /// when it's cornered, which is the whole point of having a well.
-    func testSharpBanksTheCardsMostLikelyToRescueIt() {
-        let hand = [
-            Card(id: 1, rank: .king, suit: .spades),
-            Card(id: 2, rank: .seven, suit: .hearts),
-            Card(id: 3, rank: .jack, suit: .clubs),
-            Card(id: 4, rank: .queen, suit: .diamonds),
-            Card(id: 5, rank: .six, suit: .spades),
-        ]
-        let chosen = Set(AIPlayer(difficulty: .sharp).chooseWell(from: hand))
-        XCTAssertEqual(chosen, [4, 3], "A Queen is never blocked and a Jack can't bust")
+    /// The AI has to be as blind as the player. Its choice may only depend on
+    /// how many cards it was dealt — if it could see the faces it would be
+    /// cheating at the one decision nobody has information for.
+    func testTheAICannotSeeWhatItIsBanking() {
+        // The signature is the guarantee: a count goes in, positions come out,
+        // and there is no way to pass it a card. This test exists so that adding
+        // one has to be a deliberate act with a failing test attached.
+        for difficulty in Difficulty.allCases {
+            let first = AIPlayer(difficulty: difficulty).chooseWellSlots(dealtCount: 7)
+            let second = AIPlayer(difficulty: difficulty).chooseWellSlots(dealtCount: 7)
+            XCTAssertEqual(first, second, "Same deal size, same answer — nothing else can inform it")
+        }
+    }
+}
+
+// MARK: - The pick is blind
+
+/// The well's whole value is that nobody knows what's in it, and that has to
+/// hold for its owner too. Two separate ways it could leak, both pinned here:
+/// the view a player is handed, and the action log every peer reads.
+final class BlindWellTests: XCTestCase {
+
+    private func dealt(_ cardsDealt: Int = 7) throws -> GameEngine {
+        try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: cardsDealt, seed: 2468
+        )
+    }
+
+    func testYouCannotSeeYourOwnDealWhileChoosingYourWell() throws {
+        let engine = try dealt(7)
+        XCTAssertEqual(engine.state.wellChooserID, "a")
+
+        let mine = engine.state.view(for: "a")
+        XCTAssertTrue(
+            mine.yourHand.isEmpty,
+            "The chooser's own cards must not be in their view — they'd know their outs from turn one"
+        )
+        XCTAssertEqual(mine.wellChoiceCount, 7, "Only how many, not which")
+        XCTAssertTrue(mine.youAreChoosingYourWell)
+    }
+
+    /// And it's given back the moment the well is banked.
+    func testYourHandIsRevealedOnceYouveBanked() throws {
+        let engine = try dealt(7)
+        try engine.chooseWell(slots: [0, 1], by: "a")
+
+        let mine = engine.state.view(for: "a")
+        XCTAssertEqual(mine.yourHand.count, 5, "The five you kept are yours to see")
+        XCTAssertEqual(mine.wellChoiceCount, 0)
+        XCTAssertFalse(mine.youAreChoosingYourWell)
+    }
+
+    /// Nobody else can see a player's deal either, before or after.
+    func testNobodyElseCanSeeTheDealBeingChosenFrom() throws {
+        let engine = try dealt(7)
+        for observer in ["b", "c"] {
+            let view = engine.state.view(for: observer)
+            XCTAssertEqual(view.wellChoiceCount, 0, "\(observer) shouldn't be shown a's pick")
+            for opponent in view.opponents {
+                XCTAssertEqual(opponent.wellCount, 0, "No wells exist yet")
+            }
+        }
+    }
+
+    /// The banked cards never appear in any view, including their owner's.
+    func testABankedCardIsInvisibleToEveryone() throws {
+        let engine = try dealt(7)
+        let dealtToA = try XCTUnwrap(engine.state.player(id: "a")).hand
+        let buried = Set([dealtToA[2].id, dealtToA[5].id])
+        try engine.chooseWell(slots: [2, 5], by: "a")
+
+        for observer in ["a", "b", "c"] {
+            let view = engine.state.view(for: observer)
+            let visible = Set(view.yourHand.map(\.id) + view.yourPoisonPile.map(\.id))
+            XCTAssertTrue(
+                visible.isDisjoint(with: buried),
+                "\(observer) can see a buried card"
+            )
+        }
+    }
+
+    /// The action that crosses the wire carries positions, not identities. If it
+    /// carried card IDs, every opponent could read two of your well straight out
+    /// of the match log.
+    func testTheActionLogCarriesNoCardIdentities() throws {
+        let engine = try dealt(7)
+        let dealtToA = try XCTUnwrap(engine.state.player(id: "a")).hand
+        let action = PlayerAction.chooseWell(slots: [2, 5])
+
+        let json = String(decoding: try JSONEncoder().encode(action), as: UTF8.self)
+        for card in dealtToA {
+            XCTAssertFalse(
+                json.contains("\(card.id)") && card.id > 10,
+                "The encoded action mentions card \(card.id) — well cards must not travel"
+            )
+        }
+        // And it still replays.
+        try engine.apply(SubmittedAction(playerID: "a", action: action, sequence: 0))
+        XCTAssertEqual(try XCTUnwrap(engine.state.player(id: "a")).well.count, 2)
     }
 }

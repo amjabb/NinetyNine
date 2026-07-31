@@ -296,56 +296,23 @@ struct AIPlayer {
 
     // MARK: - Choosing a well
 
-    /// Which two cards to bank face-down.
+    /// Which two positions to bank face-down.
     ///
-    /// A well card is only ever turned over when its owner is already stuck, and
-    /// an unplayable one ends their game. So the question isn't "which cards are
-    /// worth most" — it's "which cards will still be legal when the tally is in
-    /// the eighties and a suit is probably locked". That favours cards that
-    /// don't push the total: a 10 or a King-after-100 goes *down*, a Jack and a
-    /// 4 are worth nothing, an Ace can be a 1, and a Queen can be anything.
-    ///
-    /// Which is also the tension: those are the same cards you want in hand.
-    /// Banking them buys insurance with your brakes, and the tiers disagree
-    /// about that trade.
-    func chooseWell(from hand: [Card], size: Int = Rules.wellSize) -> [Int] {
-        guard hand.count > size else { return hand.map(\.id) }
-
-        let ranked = hand.sorted { rescueValue(of: $0) > rescueValue(of: $1) }
+    /// Deliberately ignorant of what the cards are, because the player is too:
+    /// the deal is face down while the well is chosen. An opponent that peeked
+    /// and banked its two safest cards would be cheating at the one decision
+    /// where nobody has any information — so this is a positional choice, and
+    /// the tiers differ only in *where* they reach, which is flavour rather than
+    /// advantage.
+    func chooseWellSlots(dealtCount: Int, size: Int = Rules.wellSize) -> [Int] {
+        guard dealtCount > size else { return Array(0..<max(0, dealtCount)) }
         switch difficulty {
-        case .ruthless:
-            // Keeps its brakes in hand where it can steer with them, and banks
-            // the next best thing. Being stuck is a risk it plays around rather
-            // than insures against.
-            let keepBack = min(2, ranked.count - size)
-            return Array(ranked.dropFirst(keepBack).prefix(size)).map(\.id)
-        case .sharp:
-            // Insures properly: the two safest cards go in the well.
-            return Array(ranked.prefix(size)).map(\.id)
-        case .casual:
-            // Banks by gut feel — the two it likes least, which is roughly the
-            // highest cards, and roughly wrong.
-            let byValue = hand.sorted { faceValue($0.rank) > faceValue($1.rank) }
-            return Array(byValue.prefix(size)).map(\.id)
+        case .casual: return Array(0..<size)                       // off the top
+        case .sharp: return Array((dealtCount - size)..<dealtCount) // off the bottom
+        case .ruthless:                                             // from the middle
+            let start = max(0, (dealtCount - size) / 2)
+            return Array(start..<(start + size))
         }
-    }
-
-    /// How likely this card is to still be playable when you're desperate.
-    private func rescueValue(of card: Card) -> Int {
-        switch card.rank {
-        case .queen: return 100  // wild for rank *and* suit — never blocked
-        case .jack: return 80    // worth nothing, so it can't bust
-        case .four: return 78    // also nothing, and it reverses
-        case .ten: return 74     // takes the tally down
-        case .ace: return 70     // can be a 1
-        case .king: return 20
-        default: return 40 - faceValue(card.rank)
-        }
-    }
-
-    /// Printed value, for the tiers that judge a card by how big it looks.
-    private func faceValue(_ rank: Rank) -> Int {
-        Int(rank.rawValue) ?? 10
     }
 
     // MARK: - Dealing

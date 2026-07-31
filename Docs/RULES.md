@@ -8,22 +8,27 @@
 
 1. **Deck:** one 52-card deck, no jokers.
 2. **Dealer:** chosen at random for the very first game. In any later game (rematch), the player who was **eliminated first** in the previous game deals next.
-3. **Hand size:** the dealer picks a hand size between **5 and 12**, but it's capped by player count so the deck doesn't run out mid-deal (each player also needs a 2-card well, and no reserve buffer is required — the dealer can use every card in the deck if they choose):
+3. **Cards to deal:** the dealer picks how many cards to deal — from **3** up to a cap set by player count, so the deck can't run out mid-deal. Two of whatever is dealt become each player's **well**, so the number is not a hand size: deal 7 and you open holding 5, deal 5 and you open holding 3.
 
-   | Players | Max hand size |
+   | Players | Max cards to deal |
    |---|---|
    | 2 | 12 |
    | 3 | 12 |
-   | 4 | 11 |
-   | 5 | 8 |
-   | 6 | 6 |
+   | 4 | 12 |
+   | 5 | 10 |
+   | 6 | 8 |
 
-4. **Dealing:** starting to the dealer's left, deal one card at a time, clockwise, until every player has the chosen hand size. Then deal each player a **Well** — two more cards, dealt face-down and left unseen. Whatever remains becomes the face-down **draw pile**. There is no starting discard card — the tally begins at 0, and the first card played establishes the discard pile.
+   The number also decides how much *choice* everyone gets over their well. At the minimum of 3 you bank two of three — no decision at all. At 9 you genuinely pick. A tight deal is therefore not only a small hand, it's a denial of a decision.
+
+4. **Dealing:** starting to the dealer's left, deal one card at a time, clockwise, until every player has the chosen number. Every card goes to the hand — nothing is set aside by the dealer. Whatever remains becomes the face-down **draw pile**. There is no starting discard card; the tally begins at 0 and the first card played establishes the discard pile.
+
+4a. **Building your well:** before anybody plays, each player in turn (starting to the dealer's left) chooses **two cards from their own hand** and buries them face down as their well. They don't see those cards again until they're stuck. What you bank is what you give up holding — and the cards that make the best well (a Queen is never blocked; a Jack can't bust you) are exactly the cards you'd want in hand.
+
 5. **First turn:** the player to the dealer's right goes first, then play proceeds clockwise.
 
 ## Basic Turn
 
-On your turn you must play one legal card from your hand face-up onto the discard pile (playing a legal card is **mandatory** if you have one — you may not voluntarily dip into your Well while a legal hand card is available). Add the card's value to the tally per the chart below. After playing, draw back up to your current hand-size cap from the draw pile. If the draw pile is empty, shuffle the discard pile (except the top/active card) into a new draw pile.
+At the start of your turn your hand is topped up to **five** if it's below that — so a small deal opens short and catches up on your first turn. Then you must play one legal card from your hand face-up onto the discard pile (playing a legal card is **mandatory** if you have one — you may not voluntarily dip into your Well while a legal hand card is available). Add the card's value to the tally per the chart below. After playing, draw back up to your current hand-size cap from the draw pile. If the draw pile is empty, shuffle the discard pile (except the top/active card) into a new draw pile.
 
 A card is only legal to play if it would keep the tally at or below 99 (barring the 9→Ace exception below) and it obeys any active suit-lock (from an 8).
 
@@ -54,8 +59,9 @@ If you hold two or more cards of the same rank you may play them all as one turn
 
 - Playing an 8 sets the tally +8 and requires every subsequent player to play a card of the named suit.
 - Naming a suit is **optional**: you may play an 8 and decline to lock anything, in which case the lock simply lifts.
-- Only a card of the locked suit is a legal play during the lock (an 8 of a *different* suit is **not** a legal play while a lock is active).
-- A **Queen is wild for suit as well as rank**, so a lock never blocks one. A Queen played while a lock is up may be declared an 8 and used to change the suit to anything — or to no suit at all.
+- Only a card of the locked suit is a legal play during the lock — with two exceptions:
+  - **An 8 of any suit, played directly on another 8.** That is how the lock changes hands: whoever follows an 8 may answer with an 8 of their own, whatever its suit, and re-point the lock (or drop it). Once any other card lands on top, the lock is binding again and an off-suit 8 is as dead as anything else.
+  - **A Queen**, which is wild for suit as well as rank, so a lock never blocks one. A Queen may be declared an 8 and used to seize the lock and send it anywhere — or nowhere. Having done so she counts as an 8 on the pile, so the next player inherits the same opening.
 - If the legal card you play happens to be an 8 (which, to be legal, must itself be of the currently-locked suit), you may rename the suit going forward.
 - The lock stays in effect, passing suit to suit, until a player can't follow it and **skips** their turn — at that point the lock lifts and any suit is legal again. It also lifts when a player is **eliminated** while it's up.
 

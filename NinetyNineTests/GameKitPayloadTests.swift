@@ -79,7 +79,8 @@ final class GameKitPayloadTests: XCTestCase {
         let mirror = Mirror(reflecting: payload())
         let fields = Set(mirror.children.compactMap(\.label))
         XCTAssertEqual(
-            fields, ["seed", "cardsDealt", "participantIDs", "participantNames", "actions"],
+            fields,
+            ["rulesVersion", "seed", "cardsDealt", "participantIDs", "participantNames", "actions"],
             "A new payload field could leak hidden state — review before adding one"
         )
         XCTAssertFalse(json.contains("\"hand\""), "The payload must not carry hands")
@@ -246,5 +247,68 @@ final class GameKitPayloadTests: XCTestCase {
         XCTAssertTrue(GameCenterSession.Status.signedIn(name: "Ada").isSignedIn)
         XCTAssertFalse(GameCenterSession.Status.signingIn.isSignedIn)
         XCTAssertFalse(GameCenterSession.Status.unknown.isSignedIn)
+    }
+}
+
+// MARK: - Rules versioning
+
+/// The failure this guards against is the quiet one. A match log written by an
+/// older build still *applies* cleanly to newer code — every action is valid —
+/// it just replays into a different game, because the deal changed. Two players
+/// end up looking at contradictory tables with nothing reported.
+@MainActor
+final class MatchCompatibilityTests: XCTestCase {
+
+    private func payload(version: Int) -> GameKitTransport.MatchPayload {
+        GameKitTransport.MatchPayload(
+            rulesVersion: version,
+            seed: 7,
+            cardsDealt: 7,
+            participantIDs: ["G:1", "G:2"],
+            participantNames: ["Ada", "Bo"],
+            actions: []
+        )
+    }
+
+    func testAPayloadFromThisBuildIsReplayable() {
+        XCTAssertTrue(payload(version: GameKitTransport.MatchPayload.currentRules).isReplayable)
+    }
+
+    func testAPayloadFromAnOlderRulesVersionIsRefused() {
+        XCTAssertFalse(payload(version: 1).isReplayable)
+    }
+
+    /// A newer build's match is equally unusable here — this device would replay
+    /// it wrongly in the other direction.
+    func testAPayloadFromANewerRulesVersionIsAlsoRefused() {
+        XCTAssertFalse(payload(version: GameKitTransport.MatchPayload.currentRules + 1).isReplayable)
+    }
+
+    /// Payloads written before versioning existed carry no field at all, and are
+    /// version 1 by definition rather than "current".
+    func testAPayloadWithNoVersionFieldIsTreatedAsTheOldestRules() throws {
+        let legacy = """
+        {"seed":7,"cardsDealt":7,"participantIDs":["G:1","G:2"],\
+        "participantNames":["Ada","Bo"],"actions":[]}
+        """
+        let decoded = try JSONDecoder().decode(
+            GameKitTransport.MatchPayload.self,
+            from: Data(legacy.utf8)
+        )
+        XCTAssertEqual(decoded.rulesVersion, 1)
+        XCTAssertFalse(decoded.isReplayable, "An unversioned match predates the new deal")
+    }
+
+    func testTheVersionSurvivesARoundTrip() throws {
+        let data = try JSONEncoder().encode(payload(version: 2))
+        let decoded = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
+        XCTAssertEqual(decoded.rulesVersion, 2)
+        XCTAssertTrue(decoded.isReplayable)
+    }
+
+    func testTheRefusalExplainsItselfToThePlayer() {
+        let message = MatchError.incompatibleRules.localizedDescription
+        XCTAssertTrue(message.contains("older version"), "Got: \(message)")
+        XCTAssertTrue(message.contains("update"), "It should say what to do about it")
     }
 }

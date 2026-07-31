@@ -288,7 +288,29 @@ final class GameViewModel: ObservableObject {
 
     var isYourTurn: Bool {
         guard let view else { return false }
-        return view.isYourTurn && !awaitingHandoff
+        return view.isYourTurn && !awaitingHandoff && !isChoosingWell
+    }
+
+    /// Several people round one phone, so the builder names whose deal it is.
+    var isSharedDevice: Bool { mode == .passAndPlay }
+
+    /// True while this device should be showing the well builder rather than the
+    /// table. Gated on the hand-off so a shared device doesn't reveal the next
+    /// player's deal before they're holding it.
+    var isChoosingWell: Bool {
+        guard let view else { return false }
+        return view.youAreChoosingYourWell && !awaitingHandoff
+    }
+
+    /// Bank two positions and let play begin.
+    func chooseWell(slots: [Int]) {
+        guard let actor = viewingPlayerID else { return }
+        Task {
+            await submit(.chooseWell(slots: slots), by: actor) {
+                Haptics.shared.play(.cardFlick)
+                SoundEngine.shared.play(.cardFlick)
+            }
+        }
     }
 
     var opponents: [OpponentView] { view?.opponents ?? [] }
@@ -320,7 +342,7 @@ final class GameViewModel: ObservableObject {
 
     var handoffTargetName: String? { coordinator.handoffTargetName }
     var handoffSeatNumber: Int {
-        guard let current = coordinator.currentPlayerID,
+        guard let current = coordinator.activeSeatID ?? coordinator.currentPlayerID,
               let index = participants.firstIndex(where: { $0.id == current })
         else { return 1 }
         return index + 1

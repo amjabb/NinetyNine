@@ -55,11 +55,59 @@ final class GameKitTransport: NSObject, MatchTransport {
     /// `ReplayTests`), and a serialised `GameState` would contain every player's
     /// hand — handing the whole game to anyone who reads the payload.
     struct MatchPayload: Codable {
+        /// Bumped whenever a rules change would make the same seed and action
+        /// log replay to a *different* state.
+        ///
+        /// This is the one kind of incompatibility that can't be detected from
+        /// the data itself: an old log applies cleanly to new code and simply
+        /// produces a different game, so two players would sit looking at
+        /// contradictory tables with nothing flagged. Version 2 is where the
+        /// well stopped being dealt and started being chosen, which changes the
+        /// deal for every match.
+        static let currentRules = 2
+
+        var rulesVersion: Int = MatchPayload.currentRules
         var seed: UInt32
         var cardsDealt: Int
         var participantIDs: [String]
         var participantNames: [String]
         var actions: [SubmittedAction]
+
+        /// Absent in payloads written before versioning existed — those are all
+        /// version 1 by definition.
+        enum CodingKeys: String, CodingKey {
+            case rulesVersion, seed, cardsDealt, participantIDs, participantNames, actions
+        }
+
+        init(
+            rulesVersion: Int = MatchPayload.currentRules,
+            seed: UInt32,
+            cardsDealt: Int,
+            participantIDs: [String],
+            participantNames: [String],
+            actions: [SubmittedAction]
+        ) {
+            self.rulesVersion = rulesVersion
+            self.seed = seed
+            self.cardsDealt = cardsDealt
+            self.participantIDs = participantIDs
+            self.participantNames = participantNames
+            self.actions = actions
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            rulesVersion = try container.decodeIfPresent(Int.self, forKey: .rulesVersion) ?? 1
+            seed = try container.decode(UInt32.self, forKey: .seed)
+            cardsDealt = try container.decode(Int.self, forKey: .cardsDealt)
+            participantIDs = try container.decode([String].self, forKey: .participantIDs)
+            participantNames = try container.decode([String].self, forKey: .participantNames)
+            actions = try container.decode([SubmittedAction].self, forKey: .actions)
+        }
+
+        /// Whether this build can replay the log and reach the same table the
+        /// other players are looking at.
+        var isReplayable: Bool { rulesVersion == MatchPayload.currentRules }
 
         var participants: [MatchParticipant] {
             zip(participantIDs, participantNames).map { id, name in
@@ -170,7 +218,10 @@ final class GameKitTransport: NSObject, MatchTransport {
 
         if let data = match.matchData, !data.isEmpty,
            let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data) {
-            // Joining a match already in progress.
+            // Joining a match already in progress. Refuse it outright if it was
+            // dealt under different rules: the log would apply cleanly and
+            // quietly produce a different table from everyone else's.
+            guard decoded.isReplayable else { throw MatchError.incompatibleRules }
             payload = decoded
         } else {
             // We're first: establish the seed and seating, and write it so every
@@ -306,6 +357,10 @@ final class GameKitTransport: NSObject, MatchTransport {
         guard let data = match.matchData, !data.isEmpty,
               let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data)
         else { return }
+        guard decoded.isReplayable else {
+            onUpdate?(.disconnected(reason: MatchError.incompatibleRules.localizedDescription))
+            return
+        }
         self.match = match
         self.payload = decoded
         deliverPendingActions()

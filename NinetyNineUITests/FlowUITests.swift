@@ -96,7 +96,7 @@ final class FlowUITests: XCTestCase {
 
     // MARK: - Setup
 
-    func test05_SetupAdjustsPlayersDifficultyAndHandSize() {
+    func test05_SetupAdjustsPlayersDifficultyAndTheDeal() {
         playButton.tap()
         XCTAssertTrue(app.staticTexts["Set it up"].waitForExistence(timeout: 5))
         ShotCollector.capture(app, name: "08-setup")
@@ -114,9 +114,10 @@ final class FlowUITests: XCTestCase {
         )
         ShotCollector.capture(app, name: "09-setup-five-ruthless")
 
-        // Hand size stepper should respect the player-count ceiling. With six
-        // players the maximum is 6, so increasing repeatedly must clamp.
-        let increase = app.buttons["Increase hand size"]
+        // The deal stepper should respect the player-count ceiling — the whole
+        // deck has to cover players × cards dealt, so increasing repeatedly must
+        // clamp rather than run past it.
+        let increase = app.buttons["One more card to deal"]
         for _ in 0..<10 where increase.isEnabled { increase.tap() }
         ShotCollector.capture(app, name: "10-setup-clamped")
 
@@ -135,16 +136,21 @@ final class FlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Set it up"].waitForExistence(timeout: 5))
         app.buttons["Deal"].tap()
 
-        // The table should come up with a gauge and a full hand.
+        // The table only appears once this player has buried two cards.
+        waitForDealToSettle()
         let gauge = app.otherElements["Tally"]
         XCTAssertTrue(gauge.waitForExistence(timeout: 10), "The tally gauge should be on the table")
-        waitForDealToSettle()
         ShotCollector.capture(app, name: "11-table-dealt")
 
         // Regression guard: the fan must fit the screen. An earlier layout put the
         // outermost cards 37pt off each edge.
+        //
+        // The count isn't the deal any more: two of it went to the well, and
+        // whoever leads is topped up to the sustaining five. So this asserts the
+        // fan is non-empty and fits, not an exact number.
         let cards = handCards
-        XCTAssertEqual(cards.count, 6, "A 6-card hand should show six cards")
+        XCTAssertFalse(cards.isEmpty, "The hand should be on screen")
+        XCTAssertLessThanOrEqual(cards.count, 12, "A hand that size would be a bug")
         let screen = app.frame
         for card in cards {
             XCTAssertGreaterThanOrEqual(
@@ -205,7 +211,11 @@ final class FlowUITests: XCTestCase {
 
         // And quitting should land back on the menu.
         app.buttons["Pause"].tap()
-        app.buttons["Quit to menu"].tap()
+        // BrassButton composes its label from title + subtitle, so the pause
+        // menu's button reads "SDQ, Self Disqualify" rather than "SDQ".
+        app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "SDQ")
+        ).firstMatch.tap()
         XCTAssertTrue(playButton.waitForExistence(timeout: 6), "Quit should return to the menu")
     }
 
@@ -224,7 +234,12 @@ final class FlowUITests: XCTestCase {
 
                 Thread.sleep(forTimeInterval: 0.2)
                 if app.buttons["Rematch"].exists { break }
-                if resolveDeclarationSheetIfPresent() { continue }
+                // A rematch deals again, so the well builder can reappear
+            // part-way through the loop.
+            if app.otherElements["well-selection"].exists {
+                if app.buildOneWell(timeout: 2) { continue }
+            }
+            if resolveDeclarationSheetIfPresent() { continue }
                 guard isPlayersTurn else { continue }
 
                 if let dead = handCards.first(where: { ($0.value as? String) == "Not playable" }) {
@@ -296,6 +311,11 @@ final class FlowUITests: XCTestCase {
                 continue
             }
 
+            // A rematch deals again, so the well builder can reappear
+            // part-way through the loop.
+            if app.otherElements["well-selection"].exists {
+                if app.buildOneWell(timeout: 2) { continue }
+            }
             if resolveDeclarationSheetIfPresent() { continue }
 
             // Query each control only in the state where it actually exists —
@@ -366,33 +386,7 @@ final class FlowUITests: XCTestCase {
     /// game moving through every code path.
     @discardableResult
     private func resolveDeclarationSheetIfPresent() -> Bool {
-        let sheetTitles = ["One, or eleven?", "Name the suit", "What is she copying?", "The well delivered"]
-        guard sheetTitles.contains(where: { app.staticTexts[$0].exists }) else { return false }
-
-        // Prefer whichever concrete option is on screen.
-        let candidates = [
-            "1, tally becomes", "11, tally becomes",
-            "Lock the suit to Spades", "Lock the suit to Hearts",
-            "Lock the suit to Diamonds", "Lock the suit to Clubs",
-        ]
-        for prefix in candidates {
-            let element = app.buttons.matching(
-                NSPredicate(format: "label BEGINSWITH %@", prefix)
-            ).firstMatch
-            if element.exists && element.isHittable {
-                element.tap()
-                return true
-            }
-        }
-        // A Queen's grid of ranks: tap any tile that isn't the Back button.
-        for button in app.buttons.allElementsBoundByIndex {
-            guard button.exists, button.isHittable else { continue }
-            let label = button.label
-            if label == "Back" || label == "Pause" { continue }
-            button.tap()
-            return true
-        }
-        return false
+        app.resolveDeclarationSheet()
     }
 
     @discardableResult
@@ -462,7 +456,9 @@ final class FlowUITests: XCTestCase {
     /// Wait for the opening deal animation to settle before capturing a shot, so
     /// screenshots show the table rather than a half-dealt hand.
     private func waitForDealToSettle() {
-        _ = app.otherElements["Tally"].waitForExistence(timeout: 10)
+        // Every game opens on the well builder now — see WellBuildingHelper.
+        app.buildAllWells()
+        _ = app.otherElements["Tally"].waitForExistence(timeout: 12)
         Thread.sleep(forTimeInterval: 2.2)
     }
 }

@@ -25,7 +25,13 @@ enum PlayerAction: Codable, Hashable, Sendable {
 
     /// Bank two of the cards you were dealt as your face-down well. Happens once
     /// per player, before anyone plays.
-    case chooseWell(cardIDs: [Int])
+    ///
+    /// **Positions, not cards.** You choose your well without seeing any of your
+    /// deal, so you couldn't name a card if you wanted to — and the identities
+    /// must not travel: this action goes into the shared log that every peer
+    /// reads, and a well card stays hidden for the whole game. Slots are indices
+    /// into your dealt cards in their dealt order.
+    case chooseWell(slots: [Int])
 
     /// Turn over one of the player's two face-down well cards. `slot` is which
     /// one they chose — both are face down, so this leaks nothing; it is simply
@@ -133,8 +139,8 @@ extension GameEngine {
         case .playSet(let cardIDs, let declaration):
             return try playSet(cardIDs: cardIDs, by: playerID, declaration: declaration)
 
-        case .chooseWell(let cardIDs):
-            return try chooseWell(cardIDs: cardIDs, by: playerID)
+        case .chooseWell(let slots):
+            return try chooseWell(slots: slots, by: playerID)
 
         case .drawFromWell(let slot):
             return try drawFromWell(by: playerID, slot: slot)
@@ -177,7 +183,7 @@ extension GameEngine {
         // concrete, legal default rather than an empty placeholder.
         if state.isChoosingWells {
             if state.wellChooserID == playerID, player.hand.count >= Rules.wellSize {
-                actions.append(.chooseWell(cardIDs: player.hand.prefix(Rules.wellSize).map(\.id)))
+                actions.append(.chooseWell(slots: Array(0..<Rules.wellSize)))
             }
             return actions
         }

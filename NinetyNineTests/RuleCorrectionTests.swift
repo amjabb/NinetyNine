@@ -291,6 +291,11 @@ final class WellChoiceTests: XCTestCase {
             if playable {
                 XCTAssertEqual(after.well.count, 1, "The card they didn't pick should remain")
                 XCTAssertNotEqual(after.well[0].id, revealed.id)
+            } else if engine.state.pendingWell?.snackooRank != nil {
+                // The third outcome: unplayable, but the third of its rank, so
+                // the Snackoo is offered before they're told they're out. They
+                // are still very much in the game.
+                XCTAssertFalse(after.isEliminated, "The rescue must be offered before elimination")
             } else {
                 XCTAssertTrue(after.isEliminated)
                 XCTAssertTrue(after.well.isEmpty, "An eliminated player's well returns to the deck")
@@ -652,5 +657,133 @@ final class CardSetTests: XCTestCase {
             XCTAssertTrue(engine.state.discardPile.contains { $0.id == card.id }, "Every card lands on the pile")
         }
         XCTAssertNotEqual(engine.state.currentPlayer.id, "a", "One play, so the turn passes")
+    }
+}
+
+// MARK: - Moving a suit lock
+
+/// The lock is set by an 8, and the author's ruling is that it can only be
+/// *moved* by an 8 played directly on another 8. Anything else landing in
+/// between makes the lock binding again.
+final class MovingTheLockTests: XCTestCase {
+
+    private func board(lock: Suit, topIsEight: Bool, tally: Int = 20) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 5),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 5),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        state.suitLock = SuitLock(suit: lock, setByPlayerID: "b")
+        state.topPlayedAsEight = topIsEight
+        return state
+    }
+
+    private func card(_ rank: Rank, _ suit: Suit) -> Card { Card(id: 1, rank: rank, suit: suit) }
+
+    func testAnEightOfAnySuitMayTakeOverALockWhenPlayedOnAnEight() {
+        let state = board(lock: .hearts, topIsEight: true)
+        switch Rules.resolve(card: card(.eight, .diamonds), declaration: .lock(.clubs), in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.locksSuit, .clubs, "The off-suit 8 moves the lock")
+            XCTAssertEqual(effect.newTally, 28)
+        case .failure(let reason):
+            XCTFail("An 8 on an 8 should be legal: \(reason.explanation)")
+        }
+    }
+
+    /// The narrowing the author asked for: once something else is on top, an
+    /// off-suit 8 is as dead as any other off-suit card.
+    func testAnOffSuitEightIsBlockedWhenTheTopCardIsNotAnEight() {
+        let state = board(lock: .hearts, topIsEight: false)
+        switch Rules.resolve(card: card(.eight, .diamonds), declaration: .lock(.clubs), in: state) {
+        case .success:
+            XCTFail("An off-suit 8 should not move a lock it wasn't played onto")
+        case .failure(let reason):
+            XCTAssertEqual(reason, .suitLocked(.hearts))
+        }
+    }
+
+    /// An 8 that *does* follow the lock is legal either way — it's an on-suit
+    /// card like any other.
+    func testAnOnSuitEightIsAlwaysLegal() {
+        for topIsEight in [true, false] {
+            let state = board(lock: .hearts, topIsEight: topIsEight)
+            switch Rules.resolve(card: card(.eight, .hearts), declaration: .lock(.spades), in: state) {
+            case .success(let effect): XCTAssertEqual(effect.locksSuit, .spades)
+            case .failure(let reason): XCTFail("top-is-eight=\(topIsEight): \(reason.explanation)")
+            }
+        }
+    }
+
+    /// The author's other route: a Queen is never blocked, so she can be played
+    /// under any lock, declared an 8, and used to move it.
+    func testAQueenCanBeDeclaredAnEightToSeizeALock() {
+        let state = board(lock: .hearts, topIsEight: false)
+        switch Rules.resolve(
+            card: card(.queen, .spades),
+            declaration: .queen(as: .eight, lockSuit: .diamonds),
+            in: state
+        ) {
+        case .success(let effect):
+            XCTAssertEqual(effect.locksSuit, .diamonds)
+            XCTAssertEqual(effect.effectiveRank, .eight)
+        case .failure(let reason):
+            XCTFail("A Queen is never blocked by a lock: \(reason.explanation)")
+        }
+    }
+
+    /// And having done so she leaves an 8 face up, so the next player gets the
+    /// same opportunity she just took.
+    func testAQueenPlayedAsAnEightLeavesAnEightFaceUp() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: 909
+        )
+        engine._finishWellSelectionForTesting()
+
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == seeded.currentPlayer.id })
+        let queen = Card(id: 800, rank: .queen, suit: .spades)
+        seeded.players[seat].hand = [queen]
+        seeded.tally = 10
+        seeded.suitLock = SuitLock(suit: .hearts, setByPlayerID: "b")
+        seeded.topPlayedAsEight = false
+        engine._replaceStateForTesting(seeded)
+
+        try engine.play(
+            cardID: queen.id,
+            by: engine.state.currentPlayer.id,
+            declaration: .queen(as: .eight, lockSuit: .diamonds)
+        )
+
+        XCTAssertEqual(engine.state.suitLock?.suit, .diamonds)
+        XCTAssertTrue(
+            engine.state.topPlayedAsEight,
+            "She's an 8 now, so the next player may play an 8 of any suit on her"
+        )
+    }
+
+    /// A plain card resets it, which is the whole point of the narrowing.
+    func testAnyOtherCardClosesTheDoor() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: 909
+        )
+        engine._finishWellSelectionForTesting()
+
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == seeded.currentPlayer.id })
+        let three = Card(id: 801, rank: .three, suit: .hearts)
+        seeded.players[seat].hand = [three]
+        seeded.tally = 10
+        seeded.suitLock = SuitLock(suit: .hearts, setByPlayerID: "b")
+        seeded.topPlayedAsEight = true
+        engine._replaceStateForTesting(seeded)
+
+        try engine.play(cardID: three.id, by: engine.state.currentPlayer.id, declaration: .plain)
+        XCTAssertFalse(engine.state.topPlayedAsEight)
     }
 }

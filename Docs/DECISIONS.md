@@ -156,3 +156,75 @@ rather than as a second banner behind the first.
 The scrim is 0.93 black rather than a tint. At 0.7 the table's banner, its
 "thinking" line and its status row all read straight through the headline —
 which the first screenshot showed immediately and no assertion would have.
+
+
+---
+
+## 10. The deal number stopped being a hand size
+
+The dealer names a number; two of it becomes each player's well, so the opening
+hand is `dealt - 2`. Deal 7 and you hold five. Deal 5 and you hold three, and
+draw up to five on your first turn.
+
+Calling that "hand size" was actively misleading, so it is `cardsDealt`
+everywhere — including a new `@AppStorage` key, because the old one held a
+number that counted only the hand and reusing it would have silently shrunk
+every returning player's opening hand by two.
+
+**The number now buys choice, not just cards.** At the minimum of three you bank
+two of three — no decision at all. At nine you genuinely pick. A tight deal is a
+denial of a decision, which is why Ruthless deals tight and Casual deals
+generously.
+
+---
+
+## 11. Refill moved to the start of the turn
+
+It used to happen only after a play. With a small deal that would have left a
+player choosing from three cards on the turn they can least afford it. Topping
+up at the start of a turn is a no-op in the ordinary case — a hand is already at
+cap when its turn comes round — and it also picks up a cap that moved when a
+queen was poisoned.
+
+One consequence worth knowing: the opening top-up draws from the deck, so it can
+turn up a queen and poison the whole table before a single card is played.
+
+---
+
+## 12. A lock can only be moved by an 8 played on an 8
+
+The first version of this let any 8 ignore a lock, which made a lock almost
+worthless — anyone holding an 8 could shrug it off at any point. The rule is
+narrower: an 8 of any suit is legal *directly on another 8*, and that's how the
+lock changes hands. Once any other card lands on top, the lock binds again.
+
+The engine tracks whether the face-up card counts as an 8, which is not the same
+as whether it *is* one: a Queen declared an 8 counts, so she can be used to seize
+a lock and then hands the same opening to the next player.
+
+---
+
+## 13. Two bugs the declaration sheet was hiding
+
+Both were reported as "the option isn't there", and both were worse than that.
+
+**Declining a lock never rendered.** The sheet built its suit list by filtering
+on "has a lock suit" — and declining a lock has no suit by definition, so the
+engine offered the option and the UI dropped it on the floor every single time.
+
+**A Queen played as an 8 never asked which suit.** It resolved ties by picking
+the option with the lowest resulting tally, and every lock suit produces the same
+tally, so it silently picked an arbitrary one. Ranks that need a follow-up answer
+now get one instead of being tie-broken.
+
+---
+
+## 14. Online matches carry a rules version
+
+A match log from an older build still *applies* cleanly to newer code — every
+action in it is valid — it simply replays into a different game, because the deal
+changed. Two players would sit looking at contradictory tables with nothing
+reported.
+
+That's undetectable from the data, so the payload states its rules version and a
+mismatch is refused with an explanation rather than tolerated.

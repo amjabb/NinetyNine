@@ -87,12 +87,26 @@ struct NextDealView: View {
         .transition(.opacity)
     }
 
+    /// Two of whatever's dealt go to each player's well, so the number is a
+    /// measure of *choice* as much as of hand size: deal three and everyone
+    /// banks two of three, deal nine and they actually pick.
+    private var dealExplanation: String {
+        let hand = cardsDealt - Rules.wellSize
+        if cardsDealt <= Rules.minCardsDealt {
+            return "Two go to each well — at \(cardsDealt) there's nothing to choose, and everyone opens holding \(hand)."
+        }
+        if hand < Rules.sustainingHandCap {
+            return "Two go to each well, so everyone opens holding \(hand) and draws up to \(Rules.sustainingHandCap) on their first turn."
+        }
+        return "Two go to each well, so everyone opens holding \(hand) and plays down to \(Rules.sustainingHandCap)."
+    }
+
     // MARK: Picker
 
     private var picker: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("Cards each").labelStyle()
+                Text("Cards to deal").labelStyle()
                 Spacer()
                 Text("\(cardsDealt)")
                     .font(Typography.counter(22, weight: .heavy))
@@ -109,7 +123,7 @@ struct NextDealView: View {
                 }
             }
 
-            Text("Everyone plays down to \(Rules.sustainingHandCap) and holds there — a big deal is an opening cushion, not a permanent one.")
+            Text(dealExplanation)
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.ivoryFaint)
                 .multilineTextAlignment(.center)

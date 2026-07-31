@@ -220,8 +220,10 @@ final class MatchCoordinator: ObservableObject {
         // Before anything else, the opening: bank two cards.
         if engine.state.isChoosingWells {
             guard let seat = engine.state.index(of: currentID) else { return nil }
-            let ids = ai.chooseWell(from: engine.state.players[seat].hand)
-            return applyLocally(.chooseWell(cardIDs: ids), by: currentID)
+            // Only the count — an AI that looked at the faces would be cheating
+            // at a decision the human makes blind.
+            let slots = ai.chooseWellSlots(dealtCount: engine.state.players[seat].hand.count)
+            return applyLocally(.chooseWell(slots: slots), by: currentID)
         }
         guard let move = ai.nextMove(for: currentID, engine: engine) else { return nil }
 
