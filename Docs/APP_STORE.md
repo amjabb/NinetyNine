@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.2` (`MARKETING_VERSION`) / `4` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.3` (`MARKETING_VERSION`) / `5` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,29 +28,86 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.2 (build 4)
+## What's New — version 1.3 (build 5)
 
-Paste this into App Store Connect's "What's New in This Version", and into the
-TestFlight build's test notes.
+**Two audiences, two texts.** The App Store still shows **1.0** — 1.1 and 1.2
+only ever went to TestFlight — so anyone updating from the store has not seen
+online play, the long-press run, or any of last week's rules fixes either. The
+store text is therefore cumulative. The TestFlight note is just the delta.
+
+### App Store — "What's New in This Version"
 
 ```
-Online multiplayer over Game Center — play 99 against friends, a turn at a time.
+YOUR WELL IS NOW YOURS TO BUILD
 
-Rules fixes, all reported from real games:
+Everything the dealer deals goes to your hand — and before a card is played you
+bury two of it, face down, as your well. You don't get to look. Nobody knows
+what's in a well, including you, right up until the turn you're forced to open
+it.
+
+So the dealer's number isn't a hand size any more, it's how many cards to deal.
+Deal seven and you start holding five. Deal five and you start holding three and
+draw up to five on your first turn. Deal three and you're burying two of three —
+no choice at all, which is its own kind of cruelty.
+
+ALSO NEW SINCE 1.0
+
+• Online multiplayer over Game Center. Play a turn, put the phone down, come
+  back tomorrow.
+• Pass and play for two to six on one device, with the screen covering itself
+  between turns — including while each player builds their well.
+• Press and hold a card to play two or more of a rank as a single turn. Two
+  fours reverse twice and cancel out; three flip the direction once.
+• The turn queens go poisonous now takes the screen, instead of sliding past in
+  a banner you could miss.
+
+RULES, CORRECTED
+
 • Your hand settles to five however many you were dealt.
-• The dealer chooses the hand size before every deal, rematches included.
-• You pick which of your two well cards to turn over.
-• A well card that completes three of a kind now offers you the Snackoo before
+• The dealer chooses the deal before every game, rematches included.
+• You choose which of your two well cards to turn over.
+• A well card that completes three of a kind offers you the Snackoo before
   telling you you're out.
 • Poisoned queens are kept, not discarded — three of them is still a Snackoo —
   and each one costs a card of hand limit, all the way down.
-• A Queen ignores the suit lock whatever suit she is, and can move the lock
-  anywhere. Playing an 8 no longer forces you to lock a suit at all, and the
-  lock lifts when a player is knocked out.
+• A Queen ignores the suit lock whatever suit she is. Played as an 8 she now
+  asks where to point the lock, instead of choosing for you.
+• An 8 of any suit can take over a lock — but only played directly on another 8.
+• Playing an 8 never forces you to lock a suit, and the lock lifts when a player
+  is knocked out.
+```
 
-New: press and hold a card to play two or more of a rank as a single turn.
-New: drawing the Queen that turns them poisonous now gets the moment it
-deserves instead of a banner you could miss.
+### TestFlight — test notes for build 5
+
+```
+The well is now yours to build, and you build it blind.
+
+Everything dealt goes to your hand; before play starts you bury two of it face
+down. You never see those two. That's deliberate — being able to read your own
+well told you your outs from turn one and made the reveal a formality.
+
+The dealer's number now means CARDS TO DEAL, not hand size. Deal 7, hold 5.
+Deal 5, hold 3 and draw two on your first turn.
+
+Fixed since build 4:
+• A Queen played as an 8 now asks which suit to lock. It used to pick one
+  silently — every suit gives the same tally, so its tie-break couldn't tell
+  them apart.
+• An 8 of any suit takes over a lock only when played directly on another 8.
+• "Lock nothing" is now actually on screen when you play an 8. It was always
+  a legal move; the sheet was filtering it out.
+• Concede and Quit are now SDQ (Self Disqualify).
+• A player who skipped is marked — amber ring, "OWES 2" — so whoever plays
+  before them can squeeze it.
+
+WORTH KNOWING: this build refuses online matches started in 1.2. An old match
+would still apply its moves cleanly here and just deal a different game, so two
+players would sit looking at different tables with nothing reported. Any match
+in flight will need restarting.
+
+STILL UNTESTED: two-device Game Center play has never run against a real
+network. Turn passing, quitting mid-match, and invitations are the things to
+hammer.
 ```
 
 ---
@@ -134,9 +191,9 @@ a queen is wild — she copies any card you name, right up until somebody draws
 one from the deck and queens turn poisonous for the rest of the game.
 
 When you have nothing legal left, you have two choices. Skip, and owe two plays
-next turn. Or go to the well: two face-down cards you've never seen, one drawn
-at random. If it plays, you survive and draw two more. If it doesn't, you're
-out on the spot.
+next turn. Or go to the well: two cards you buried yourself at the start of the
+game, face down, without looking. You choose which one to turn over. If it
+plays, you survive and draw two more. If it doesn't, you're out on the spot.
 
 Last player standing wins.
 
@@ -161,14 +218,21 @@ not doing sums.
 
 • PASS AND PLAY
 Two to six of you, one device. The screen covers itself between turns, so
-nobody sees anybody else's hand. Name every seat and hand the phone around.
+nobody sees anybody else's hand — including while each player is burying their
+well. Name every seat and hand the phone around.
+
+• ONLINE, A TURN AT A TIME
+Play friends over Game Center. Take your turn, put the phone down, come back
+tomorrow. No account to make and nothing to pay.
 
 • TABLES YOUR WAY
-Two to six players. Hand sizes from five to twelve. An illustrated rulebook,
-lifetime stats, and eleven achievements to chase.
+Two to six players. Deal anything from three cards to twelve — and remember two
+of them are going in your well. An illustrated rulebook, lifetime stats, and
+eleven achievements to chase.
 
-No accounts. No ads. No in-app purchases. No internet connection — the app
-makes no network requests at all, and nothing you do leaves your device.
+No ads. No in-app purchases. No tracking, no analytics, no data collected. Play
+solo or pass-and-play entirely offline; online matches go through Apple's Game
+Center and nowhere else.
 ```
 
 ### Keywords (100 char limit, comma separated, no spaces)
