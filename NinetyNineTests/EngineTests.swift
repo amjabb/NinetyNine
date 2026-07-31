@@ -261,12 +261,16 @@ final class EngineTests: XCTestCase {
         }
     }
 
-    func testQueenUsesItsOwnSuitForLockLegality() {
+    /// Superseded rule. This test used to assert that a Queen obeyed the lock
+    /// like any other card; the author's ruling is that a Queen is wild for
+    /// *suit* as well as rank, so a lock never blocks one.
+    func testAQueenIgnoresTheSuitLockWhateverItsPrintedSuit() {
         let state = board(tally: 20, suitLock: .hearts)
-        // A Queen of Hearts follows the lock even while impersonating a King.
         assertLegal(effect(.queen, .hearts, .queen(as: .king), in: state), tally: 30)
-        // A Queen of Spades does not.
-        assertIllegal(effect(.queen, .spades, .queen(as: .king), in: state), .suitLocked(.hearts))
+        assertLegal(effect(.queen, .spades, .queen(as: .king), in: state), tally: 30)
+        assertLegal(effect(.queen, .clubs, .queen(as: .king), in: state), tally: 30)
+        // Every other card is still judged on its printed suit.
+        assertIllegal(effect(.king, .spades, .plain, in: state), .suitLocked(.hearts))
     }
 
     func testSkippingLiftsTheLock() throws {
@@ -320,9 +324,17 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(declarations, [.ace(.one)])
     }
 
-    func testLegalDeclarationsForEightCoversAllSuitsWhenUnlocked() {
+    func testLegalDeclarationsForEightCoverEverySuitPlusDecliningToLock() {
         let state = board(tally: 10)
-        XCTAssertEqual(Rules.legalDeclarations(for: card(.eight, .spades), in: state).count, 4)
+        let declarations = Rules.legalDeclarations(for: card(.eight, .spades), in: state)
+        XCTAssertEqual(declarations.count, 5, "Four suits, plus locking nothing")
+        XCTAssertTrue(
+            declarations.contains(.lockNothing),
+            "Locking is an option, not an obligation"
+        )
+        for suit in Suit.allCases {
+            XCTAssertTrue(declarations.contains(.lock(suit)), "Missing \(suit)")
+        }
     }
 
     func testDeadCardHasNoLegalDeclarations() {

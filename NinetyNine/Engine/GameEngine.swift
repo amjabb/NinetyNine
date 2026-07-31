@@ -192,6 +192,12 @@ final class GameEngine {
             state.suitLock = SuitLock(suit: suit, setByPlayerID: playerID)
             events.append(.suitLocked(suit, by: playerID))
             note("\(name) locks the suit to \(suit.displayName).")
+        } else if effect.liftsSuitLock, state.suitLock != nil {
+            // An 8 always resets the lock; declining to name a suit resets it to
+            // nothing, which is a real tactical option — it frees everyone.
+            state.suitLock = nil
+            events.append(.suitLockLifted)
+            note("\(name) plays an 8 and names no suit — the lock lifts.")
         }
 
         state.forcedNegativeNext = effect.setsForcedNegativeNext
@@ -202,6 +208,42 @@ final class GameEngine {
             note("\(name) rides the matching Ace to 100. The next card is forced negative.")
         }
 
+        return events
+    }
+
+    /// Play several cards of the same rank at once.
+    ///
+    /// Counts as a single play for the turn — dropping three 5s doesn't clear a
+    /// two-play skip debt any faster than one card would.
+    @discardableResult
+    func playSet(cardIDs: [Int], by playerID: String, declaration: Declaration) throws -> [GameEvent] {
+        guard !state.isOver else { throw GameError.gameOver }
+        guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+
+        let cards = cardIDs.compactMap { id in state.players[seat].hand.first { $0.id == id } }
+        guard cards.count == cardIDs.count, !cards.isEmpty else { throw GameError.cardNotInHand }
+
+        let effect: CardEffect
+        switch Rules.resolveSet(cards: cards, declaration: declaration, in: state) {
+        case .success(let resolved): effect = resolved
+        case .failure(let reason): throw GameError.illegal(reason)
+        }
+
+        var events: [GameEvent] = []
+        for card in cards {
+            state.players[seat].hand.removeAll { $0.id == card.id }
+        }
+        // The whole set lands as one move: one tally change, one reversal, one
+        // lock. Applying each card separately would reverse three times for
+        // three 4s and re-announce the lock for every 8.
+        events += apply(effect: effect, card: cards[cards.count - 1], playerID: playerID)
+        // Everything under the top card is still on the pile.
+        for card in cards.dropLast() {
+            state.discardPile.insert(card, at: max(0, state.discardPile.count - 1))
+        }
+        events += refillHand(seat: seat)
+        events += finishOnePlay(seat: seat)
         return events
     }
 
@@ -508,6 +550,15 @@ final class GameEngine {
         state.players[seat].hand = []
         state.players[seat].well = []
         state.players[seat].poisonPile = []
+
+        // A lock dies with the player it was pointing at. Leaving it up would
+        // hold the remaining players to a suit chosen for a table that no longer
+        // exists — same reasoning as a lock lifting when someone can't follow it.
+        if state.suitLock != nil {
+            state.suitLock = nil
+            events.append(.suitLockLifted)
+            note("The suit lock lifts.")
+        }
 
         events.append(.playerEliminated(id: state.players[seat].id, reason: reason, rank: rank))
 

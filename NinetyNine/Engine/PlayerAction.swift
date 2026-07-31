@@ -20,6 +20,9 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// Play a card from hand, resolved with the given declaration.
     case play(cardID: Int, declaration: Declaration)
 
+    /// Play several cards of the same rank together. One play, one tally change.
+    case playSet(cardIDs: [Int], declaration: Declaration)
+
     /// Turn over one of the player's two face-down well cards. `slot` is which
     /// one they chose — both are face down, so this leaks nothing; it is simply
     /// left-or-right. The authority still owns what the card turns out to be.
@@ -108,6 +111,9 @@ extension GameEngine {
         switch submitted.action {
         case .play(let cardID, let declaration):
             return try play(cardID: cardID, by: playerID, declaration: declaration)
+
+        case .playSet(let cardIDs, let declaration):
+            return try playSet(cardIDs: cardIDs, by: playerID, declaration: declaration)
 
         case .drawFromWell(let slot):
             return try drawFromWell(by: playerID, slot: slot)

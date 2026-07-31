@@ -28,20 +28,37 @@ struct Declaration: Codable, Hashable, Sendable {
     var queenAs: Rank?
     /// Chosen value when the effective rank is an Ace.
     var aceValue: AceValue?
-    /// Chosen suit when the effective rank is an 8.
+    /// Chosen suit when the effective rank is an 8. Nil together with
+    /// `declinesLock` false means "not answered yet".
     var lockSuit: Suit?
+    /// An 8 may be played without locking anything — the lock is an option, not
+    /// an obligation. Distinguishes "chose no suit" from "hasn't chosen".
+    var declinesLock: Bool = false
 
-    init(queenAs: Rank? = nil, aceValue: AceValue? = nil, lockSuit: Suit? = nil) {
+    init(
+        queenAs: Rank? = nil,
+        aceValue: AceValue? = nil,
+        lockSuit: Suit? = nil,
+        declinesLock: Bool = false
+    ) {
         self.queenAs = queenAs
         self.aceValue = aceValue
         self.lockSuit = lockSuit
+        self.declinesLock = declinesLock
     }
 
     static let plain = Declaration()
     static func ace(_ value: AceValue) -> Declaration { Declaration(aceValue: value) }
     static func lock(_ suit: Suit) -> Declaration { Declaration(lockSuit: suit) }
-    static func queen(as rank: Rank, aceValue: AceValue? = nil, lockSuit: Suit? = nil) -> Declaration {
-        Declaration(queenAs: rank, aceValue: aceValue, lockSuit: lockSuit)
+    /// An 8 played without naming a suit.
+    static let lockNothing = Declaration(declinesLock: true)
+    static func queen(
+        as rank: Rank,
+        aceValue: AceValue? = nil,
+        lockSuit: Suit? = nil,
+        declinesLock: Bool = false
+    ) -> Declaration {
+        Declaration(queenAs: rank, aceValue: aceValue, lockSuit: lockSuit, declinesLock: declinesLock)
     }
 }
 
@@ -97,6 +114,9 @@ struct CardEffect: Equatable, Sendable {
     var effectiveSuit: Suit
     var reversesDirection: Bool = false
     var locksSuit: Suit?
+    /// True when an 8 was played *without* naming a suit. Playing an 8 always
+    /// resets the lock — declining just resets it to nothing.
+    var liftsSuitLock: Bool = false
     var setsForcedNegativeNext: Bool = false
     var isNine: Bool = false
     var completesHundred: Bool = false
@@ -129,8 +149,10 @@ enum Rules {
     /// removes cards, it only tops up.
     static let sustainingHandCap = 5
 
-    /// A poisoned queen permanently costs one card of capacity, to this floor.
-    static let poisonedHandCapFloor = 3
+    /// A poisoned queen permanently costs one card of capacity. Three queens
+    /// down means a hand of two — the floor only exists so a player can never be
+    /// left unable to hold a card at all.
+    static let poisonedHandCapFloor = 1
 
     // MARK: Hand-size limits
 
@@ -190,11 +212,13 @@ enum Rules {
             reverses = true
 
         case .eight:
-            guard let suit = declaration.lockSuit else {
-                return .failure(.missingDeclaration("Name the suit to lock."))
+            // Locking is optional. `declinesLock` is how a player says "no suit"
+            // — without it we can't tell that apart from not having answered.
+            guard declaration.lockSuit != nil || declaration.declinesLock else {
+                return .failure(.missingDeclaration("Name a suit to lock, or choose none."))
             }
             delta = forcedNegative ? -8 : 8
-            locksSuit = suit
+            locksSuit = declaration.lockSuit
 
         case .nine:
             isNine = true
@@ -242,8 +266,9 @@ enum Rules {
             return .failure(.cannotGoNegativeExceptFromZero(resulting: newTally))
         }
 
-        // Suit lock is judged on the card's *printed* suit.
-        if let lock = state.suitLock, card.suit != lock.suit {
+        // A Queen is wild for *suit* as well as rank, so a lock never blocks
+        // one. Every other card is judged on its printed suit.
+        if let lock = state.suitLock, card.rank != .queen, card.suit != lock.suit {
             return .failure(.suitLocked(lock.suit))
         }
 
@@ -253,6 +278,7 @@ enum Rules {
             effectiveSuit: card.suit,
             reversesDirection: reverses,
             locksSuit: locksSuit,
+            liftsSuitLock: effectiveRank == .eight && locksSuit == nil,
             setsForcedNegativeNext: newTally == hundredException,
             isNine: isNine,
             completesHundred: completesHundred,
@@ -278,6 +304,7 @@ enum Rules {
             for value in AceValue.allCases { consider(.ace(value)) }
         case .eight:
             for suit in Suit.allCases { consider(.lock(suit)) }
+            consider(.lockNothing)
         case .queen:
             for rank in Rank.allCases where rank != .queen {
                 switch rank {
@@ -285,6 +312,7 @@ enum Rules {
                     for value in AceValue.allCases { consider(.queen(as: .ace, aceValue: value)) }
                 case .eight:
                     for suit in Suit.allCases { consider(.queen(as: .eight, lockSuit: suit)) }
+                    consider(.queen(as: .eight, declinesLock: true))
                 default:
                     consider(.queen(as: rank))
                 }
@@ -293,6 +321,105 @@ enum Rules {
             consider(.plain)
         }
 
+        return results
+    }
+
+    /// Resolve several cards of the same rank played together.
+    ///
+    /// Each card is validated *in sequence*, against the tally as it stands after
+    /// the ones before it — so three 5s from 90 is illegal because the third
+    /// would bust, not because the set as a whole is too big. That's the same
+    /// answer as playing them one at a time, which is what makes it fair.
+    ///
+    /// Each 4 reverses, so they compound: two 4s cancel out and leave the
+    /// direction alone, three flip it once. The suit lock is different — it's a
+    /// state, not a toggle, so the last 8 in the set simply sets it.
+    ///
+    /// Queens are excluded — a set of wilds each impersonating something is a
+    /// different feature, and a confusing one.
+    static func resolveSet(
+        cards: [Card],
+        declaration: Declaration,
+        in state: GameState
+    ) -> Result<CardEffect, IllegalReason> {
+        guard let first = cards.first else {
+            return .failure(.missingDeclaration("No cards selected."))
+        }
+        guard cards.count > 1 else {
+            return resolve(card: first, declaration: declaration, in: state)
+        }
+        guard first.rank != .queen else {
+            return .failure(.missingDeclaration("Queens can't be played as a set."))
+        }
+        guard cards.allSatisfy({ $0.rank == first.rank }) else {
+            return .failure(.missingDeclaration("A set must be all the same rank."))
+        }
+
+        var running = state
+        var combined: CardEffect?
+        var reversals = 0
+
+        for card in cards {
+            switch resolve(card: card, declaration: declaration, in: running) {
+            case .failure(let reason):
+                return .failure(reason)
+            case .success(let step):
+                if step.reversesDirection { reversals += 1 }
+                running.tally = step.newTally
+                // A 9 clears the pending-nine window for the card after it, so
+                // the sequence has to carry that too.
+                running.pendingNineSuit = step.isNine ? card.suit : nil
+                running.forcedNegativeNext = step.setsForcedNegativeNext
+                combined = CardEffect(
+                    newTally: step.newTally,
+                    effectiveRank: step.effectiveRank,
+                    effectiveSuit: step.effectiveSuit,
+                    // Net parity: an even number of 4s leaves play going the way
+                    // it already was.
+                    reversesDirection: reversals % 2 == 1,
+                    locksSuit: step.locksSuit,
+                    liftsSuitLock: step.liftsSuitLock,
+                    setsForcedNegativeNext: step.setsForcedNegativeNext,
+                    isNine: step.isNine,
+                    completesHundred: step.completesHundred,
+                    tallyDelta: step.newTally - state.tally
+                )
+            }
+        }
+        return combined.map { .success($0) } ?? .failure(.missingDeclaration("No cards selected."))
+    }
+
+    /// Ranks the player holds two or more of *and* could legally play together.
+    /// Used to decide whether a long press should offer the set at all.
+    static func playableSetRanks(for player: PlayerState, in state: GameState) -> [Rank] {
+        var counts: [Rank: [Card]] = [:]
+        for card in player.hand where card.rank != .queen {
+            counts[card.rank, default: []].append(card)
+        }
+        return Rank.allCases.filter { rank in
+            guard let cards = counts[rank], cards.count > 1 else { return false }
+            return legalDeclarations(forSet: cards, in: state).isEmpty == false
+        }
+    }
+
+    /// Every legal way to play this set together.
+    static func legalDeclarations(forSet cards: [Card], in state: GameState) -> [Declaration] {
+        guard let first = cards.first, first.rank != .queen else { return [] }
+        var results: [Declaration] = []
+        func consider(_ declaration: Declaration) {
+            if case .success = resolveSet(cards: cards, declaration: declaration, in: state) {
+                results.append(declaration)
+            }
+        }
+        switch first.rank {
+        case .ace:
+            for value in AceValue.allCases { consider(.ace(value)) }
+        case .eight:
+            for suit in Suit.allCases { consider(.lock(suit)) }
+            consider(.lockNothing)
+        default:
+            consider(.plain)
+        }
         return results
     }
 
@@ -312,14 +439,14 @@ enum Rules {
     /// declarations (a card blocked by the suit lock reports the lock, not an
     /// arithmetic complaint about one arbitrary declaration).
     static func blockingReason(for card: Card, in state: GameState) -> IllegalReason? {
-        if let lock = state.suitLock, card.suit != lock.suit {
+        if let lock = state.suitLock, card.rank != .queen, card.suit != lock.suit {
             return .suitLocked(lock.suit)
         }
         var fallback: IllegalReason?
         let candidates: [Declaration]
         switch card.rank {
         case .ace: candidates = AceValue.allCases.map { .ace($0) }
-        case .eight: candidates = Suit.allCases.map { .lock($0) }
+        case .eight: candidates = Suit.allCases.map { .lock($0) } + [.lockNothing]
         case .queen: candidates = Rank.allCases.filter { $0 != .queen }.map { rank in
             switch rank {
             case .ace: return .queen(as: .ace, aceValue: .one)

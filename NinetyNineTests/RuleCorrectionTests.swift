@@ -94,16 +94,18 @@ final class HandCapTests: XCTestCase {
         XCTAssertEqual(engine.state.player(id: me)?.hand.count, 5)
     }
 
-    func testPoisonedQueensStepTheCapDownFiveFourThree() throws {
-        // The exact sequence the rulebook names.
+    /// Each poisoned queen costs a card of capacity, all the way down: three
+    /// queens down means a hand of two. The floor exists only so a player can
+    /// never be left unable to hold a card at all.
+    func testEachPoisonedQueenCostsACardOfCapacity() throws {
         var state = GameState(
             players: [PlayerState(id: "a", name: "A", kind: .human, handCap: Rules.sustainingHandCap)],
             currentPlayerIndex: 0, dealerID: "a", handSize: 5
         )
         XCTAssertEqual(state.players[0].handCap, 5)
-        for expected in [4, 3, 3, 3] {
+        for expected in [4, 3, 2, 1, 1] {
             state.players[0].handCap = max(Rules.poisonedHandCapFloor, state.players[0].handCap - 1)
-            XCTAssertEqual(state.players[0].handCap, expected, "Cap should floor at 3")
+            XCTAssertEqual(state.players[0].handCap, expected)
         }
     }
 }
@@ -492,5 +494,140 @@ final class WellSnackooRescueTests: XCTestCase {
             Rules.rankCompletedInHand(by: Card(id: 825, rank: .four, suit: .clubs), for: player),
             .four
         )
+    }
+}
+
+// MARK: - Playing a set
+
+final class CardSetTests: XCTestCase {
+
+    private func board(tally: Int, hand: [Card], players: Int = 3) -> GameState {
+        var seats = [PlayerState(id: "a", name: "A", kind: .human, handCap: 5)]
+        seats[0].hand = hand
+        for index in 1..<players {
+            seats.append(PlayerState(id: "p\(index)", name: "P\(index)", kind: .ai(.sharp), handCap: 5))
+        }
+        var state = GameState(players: seats, currentPlayerIndex: 0, dealerID: "a", handSize: 5)
+        state.tally = tally
+        return state
+    }
+
+    private func cards(_ rank: Rank, _ suits: [Suit]) -> [Card] {
+        suits.enumerated().map { Card(id: 700 + $0.offset, rank: rank, suit: $0.element) }
+    }
+
+    func testASetSumsItsValues() {
+        let set = cards(.five, [.spades, .hearts, .clubs])
+        let state = board(tally: 10, hand: set)
+        switch Rules.resolveSet(cards: set, declaration: .plain, in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.newTally, 25, "Three fives is fifteen")
+            XCTAssertEqual(effect.tallyDelta, 15)
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+    }
+
+    /// Confirmed by the author: the set is illegal if the running total busts,
+    /// exactly as if the cards were played one at a time.
+    func testASetIsIllegalIfTheRunningTotalBusts() {
+        let set = cards(.five, [.spades, .hearts, .clubs])
+        let state = board(tally: 90, hand: set)
+        // 90 → 95 → 100. The third card is what kills it.
+        switch Rules.resolveSet(cards: set, declaration: .plain, in: state) {
+        case .success(let effect): XCTFail("Expected a bust, got \(effect.newTally)")
+        case .failure(let reason): XCTAssertEqual(reason, .wouldExceed99(resulting: 100))
+        }
+        // Two of them from 85 is fine — the rule is about the running total,
+        // not about sets being special.
+        switch Rules.resolveSet(cards: Array(set.prefix(2)), declaration: .plain, in: board(tally: 85, hand: set)) {
+        case .success(let effect): XCTAssertEqual(effect.newTally, 95)
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+    }
+
+    /// Confirmed by the author: fours compound, so an even number cancels out.
+    func testFoursReverseOncePerCardSoTwoCancelOut() {
+        let two = cards(.four, [.spades, .hearts])
+        let state = board(tally: 20, hand: two)
+        switch Rules.resolveSet(cards: two, declaration: .plain, in: state) {
+        case .success(let effect):
+            XCTAssertFalse(effect.reversesDirection, "Two fours cancel each other out")
+            XCTAssertEqual(effect.newTally, 20, "Fours are worth nothing")
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+
+        let three = cards(.four, [.spades, .hearts, .clubs])
+        switch Rules.resolveSet(cards: three, declaration: .plain, in: board(tally: 20, hand: three)) {
+        case .success(let effect):
+            XCTAssertTrue(effect.reversesDirection, "Three fours flip it once")
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+    }
+
+    func testASetOfEightsLocksOnceToTheChosenSuit() {
+        let set = cards(.eight, [.spades, .hearts])
+        let state = board(tally: 10, hand: set)
+        switch Rules.resolveSet(cards: set, declaration: .lock(.diamonds), in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.newTally, 26, "Both eights count")
+            XCTAssertEqual(effect.locksSuit, .diamonds, "The lock is a state, not a toggle")
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+    }
+
+    func testASetOfAcesTakesOneValueForAllOfThem() {
+        let set = cards(.ace, [.spades, .hearts, .clubs])
+        let state = board(tally: 0, hand: set)
+        switch Rules.resolveSet(cards: set, declaration: .ace(.eleven), in: state) {
+        case .success(let effect): XCTAssertEqual(effect.newTally, 33)
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+        switch Rules.resolveSet(cards: set, declaration: .ace(.one), in: state) {
+        case .success(let effect): XCTAssertEqual(effect.newTally, 3)
+        case .failure(let reason): XCTFail(reason.explanation)
+        }
+    }
+
+    func testQueensCannotBePlayedAsASet() {
+        let set = cards(.queen, [.spades, .hearts])
+        let state = board(tally: 10, hand: set)
+        switch Rules.resolveSet(cards: set, declaration: .queen(as: .king), in: state) {
+        case .success: XCTFail("Queens should be excluded from set play")
+        case .failure: break
+        }
+    }
+
+    func testOnlyRanksWithALegalSetAreOffered() {
+        let hand = cards(.five, [.spades, .hearts]) + [Card(id: 750, rank: .king, suit: .clubs)]
+        let state = board(tally: 10, hand: hand)
+        let player = try! XCTUnwrap(state.player(id: "a"))
+        XCTAssertEqual(Rules.playableSetRanks(for: player, in: state), [.five])
+
+        // At 95 the pair would bust, so it isn't offered at all.
+        let tight = board(tally: 95, hand: hand)
+        let tightPlayer = try! XCTUnwrap(tight.player(id: "a"))
+        XCTAssertTrue(Rules.playableSetRanks(for: tightPlayer, in: tight).isEmpty)
+    }
+
+    func testPlayingASetCountsAsOnePlayAndDiscardsEveryCard() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .ai(.sharp))],
+            dealerIndex: 1, handSize: 5, seed: 4242
+        )
+        var seeded = engine.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "a" })
+        let set = cards(.three, [.spades, .hearts, .clubs])
+        seeded.tally = 10
+        seeded.players[seat].hand = set
+        seeded.currentPlayerIndex = seat
+        engine._replaceStateForTesting(seeded)
+
+        try engine.playSet(cardIDs: set.map(\.id), by: "a", declaration: .plain)
+
+        XCTAssertEqual(engine.state.tally, 19, "Three threes")
+        for card in set {
+            XCTAssertTrue(engine.state.discardPile.contains { $0.id == card.id }, "Every card lands on the pile")
+        }
+        XCTAssertNotEqual(engine.state.currentPlayer.id, "a", "One play, so the turn passes")
     }
 }
