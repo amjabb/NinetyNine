@@ -1,6 +1,6 @@
 # Multiplayer — design and plan
 
-Target: **1.1**. Branch: `feature/multiplayer`. 1.0 is tagged `v1.0`.
+Target: **1.2** (was scoped as 1.1). Branch: `feature/multiplayer`. 1.0 is tagged `v1.0`.
 
 ---
 

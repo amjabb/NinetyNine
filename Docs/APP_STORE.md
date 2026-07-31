@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.1` (`MARKETING_VERSION`) / `4` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.2` (`MARKETING_VERSION`) / `4` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,7 +28,7 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.1 (build 4)
+## What's New — version 1.2 (build 4)
 
 Paste this into App Store Connect's "What's New in This Version", and into the
 TestFlight build's test notes.
