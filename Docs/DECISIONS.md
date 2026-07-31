@@ -101,3 +101,58 @@ danger is audible before it's read.
 `ScreenshotTests` drives the real app into each state and captures it. Store
 images therefore cannot show something the app doesn't do, and they regenerate
 after any visual change with one command.
+
+---
+
+## 7. Playing a run is a long press, not a button
+
+Two or more of a rank can go down as one turn. The obvious design — a "play all
+of these" control on the hand — was rejected on the author's constraint: it
+would be visible for the entire game, and the endgame is exactly when a player is
+deliberately hoarding nines and jacks. A permanent affordance there is noise at
+best and a misfire at worst.
+
+So the gesture is deliberately separate from the one that plays a card. Tap
+always plays exactly the card you tapped. Long press opens the builder, and only
+when the pressed card actually has company — otherwise it does nothing visible,
+which is better than a control that scolds you for pressing it.
+
+The builder is a single screen rather than a count picker feeding a declaration
+sheet. Two modals between a long press and a card landing is more ceremony than
+the move deserves.
+
+**Order is shown, not just membership.** Cards in a run are judged one at a time
+against the running tally, so with 5s near the ceiling the order is the
+difference between legal and refused. A numbered badge is the cheapest way to
+make that visible.
+
+---
+
+## 8. Effects compound; states don't
+
+A run of 4s reverses once per card, so two cancel out and three net a single
+flip. A run of 8s locks once, to the suit named.
+
+That asymmetry looks like an inconsistency and isn't: reversal is a *toggle*
+applied per card, whereas the suit lock is a *state* the last card sets. Getting
+this wrong is invisible in a two-player game (where reversal does nothing) and
+quietly changes who plays next in every other game, so `resolveSet` computes
+reversal as the parity of the count and there are tests pinning both halves.
+
+---
+
+## 9. Queens turning poisonous takes the screen
+
+It happens once per game, changes the rules for everyone at the same instant,
+and can't be undone. It used to be a banner that slid past in well under a
+second — the author noticed and said so.
+
+It is now a full-screen moment showing the actual queen that did it, with copy
+that differs by viewer: whoever drew it is told plainly, and each player is told
+what it costs *them* specifically. The overlay reads ahead in the event timeline
+to find its own `queenPoisoned` events so the cost lands in the same breath
+rather than as a second banner behind the first.
+
+The scrim is 0.93 black rather than a tint. At 0.7 the table's banner, its
+"thinking" line and its status row all read straight through the headline —
+which the first screenshot showed immediately and no assertion would have.

@@ -195,6 +195,19 @@ struct RuleSection: Identifiable {
                 "Play one legal card from your hand, face up, onto the pile. If you have a legal card, playing it is mandatory.",
                 "Afterwards you draw back up to your hand limit.",
                 "Cards you can't legally play are dimmed. Tap one to see why.",
+                "Holding two or more of a rank? Press and hold one to play them all as a single turn.",
+            ]
+        ),
+        RuleSection(
+            id: "runs",
+            title: "Playing a run",
+            glyph: "square.stack.3d.up",
+            points: [
+                "Press and hold a card you hold more than one of. It costs one play, however many go down.",
+                "They land one after another and each is judged as it goes — three 5s from 90 is illegal, because the third would reach 100.",
+                "Effects compound. Two 4s reverse twice and cancel out; three flip the direction once.",
+                "One declaration covers the whole run: every Ace in it is a 1, or every one is an 11.",
+                "Queens are the exception — each has to name what she's copying, so they go down one at a time.",
             ]
         ),
         RuleSection(
@@ -203,8 +216,10 @@ struct RuleSection: Identifiable {
             glyph: "lock.fill",
             points: [
                 "Playing an 8 adds 8 and locks the suit. Everyone after you must follow it.",
+                "Naming a suit is optional — you can play an 8 and lock nothing.",
                 "Only cards of the locked suit are legal — including 8s. An 8 of the locked suit may rename it.",
-                "The lock only breaks when somebody can't follow it and skips.",
+                "A Queen ignores the lock entirely, whatever suit she is. Declare her an 8 to move the lock anywhere you like.",
+                "The lock breaks when somebody can't follow it and skips, or when a player is knocked out while it's up.",
             ]
         ),
         RuleSection(
@@ -234,7 +249,8 @@ struct RuleSection: Identifiable {
             points: [
                 "A Queen is wild — she copies the value and ability of any card you name.",
                 "The moment anybody draws a Queen from the deck, queens turn poisonous for the rest of the game.",
-                "Every Queen still held in hand is immediately exiled to its owner's poison pile, and each one permanently lowers that player's hand limit by one, down to a floor of three.",
+                "Every Queen still held in hand is immediately exiled to its owner's poison pile.",
+                "Each poisoned Queen permanently costs that player one card of hand limit — three of them down means a hand of two.",
             ]
         ),
         RuleSection(

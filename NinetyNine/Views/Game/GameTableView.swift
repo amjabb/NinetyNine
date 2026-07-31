@@ -357,6 +357,17 @@ struct GameTableView: View {
             )
         }
 
+        if let poisoning = viewModel.queenPoisoning {
+            QueenPoisonOverlay(
+                card: poisoning.card,
+                triggerName: poisoning.triggerName,
+                itWasYou: poisoning.itWasYou,
+                yourExiledCount: poisoning.yourExiledCount,
+                yourNewCap: poisoning.yourNewCap,
+                onDismiss: { viewModel.dismissQueenPoisoning() }
+            )
+        }
+
         if let pending = viewModel.pendingSet {
             SetPlaySheet(
                 pending: pending,

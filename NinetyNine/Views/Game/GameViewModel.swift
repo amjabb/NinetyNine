@@ -47,6 +47,8 @@ final class GameViewModel: ObservableObject {
     @Published var rejection: Rejection?
     /// Set the player is assembling by long press. Nil almost always.
     @Published var pendingSet: PendingSet?
+    /// The once-a-game moment when queens turn poisonous.
+    @Published var queenPoisoning: QueenPoisoning?
     /// The achievement toast currently on screen.
     @Published var achievementToast: Achievement?
     /// True while cards are being dealt at the start of a game.
@@ -118,6 +120,15 @@ final class GameViewModel: ObservableObject {
         var selected: [Card]
 
         var canPlay: Bool { selected.count > 1 }
+    }
+
+    struct QueenPoisoning: Identifiable, Equatable {
+        let id = UUID()
+        var card: Card
+        var triggerName: String
+        var itWasYou: Bool
+        var yourExiledCount: Int
+        var yourNewCap: Int?
     }
 
     struct Rejection: Identifiable, Equatable {
@@ -439,6 +450,41 @@ final class GameViewModel: ObservableObject {
         switch Rules.resolveSet(cards: pending.selected, declaration: declaration, in: view.rulesContext()) {
         case .success(let effect): return effect.newTally
         case .failure: return nil
+        }
+    }
+
+    func dismissQueenPoisoning() {
+        Haptics.shared.play(.select)
+        withAnimation(Motion.drama) { queenPoisoning = nil }
+    }
+
+    /// How many of *your* queens this poisoning takes, and the cap you're left
+    /// with. Peeks ahead at the .queenPoisoned events that follow in the same
+    /// timeline.
+    private func remainingQueenExiles(
+        in events: [GameEvent], from index: Int
+    ) -> (count: Int, newCap: Int?) {
+        var count = 0
+        var cap: Int?
+        for event in events[(index + 1)...] {
+            guard case .queenPoisoned(_, let owner, let newCap) = event else { continue }
+            if owner == viewingPlayerID {
+                count += 1
+                cap = newCap
+            }
+        }
+        return (count, cap)
+    }
+
+    /// Hold until the player dismisses, with a backstop so an unattended device
+    /// (or an AI-only table) doesn't sit here forever.
+    private func waitForQueenMoment() async {
+        let deadline = Date().addingTimeInterval(6)
+        while queenPoisoning != nil && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+        if queenPoisoning != nil {
+            withAnimation(Motion.drama) { queenPoisoning = nil }
         }
     }
 
@@ -782,8 +828,19 @@ final class GameViewModel: ObservableObject {
 
     // MARK: - Event choreography
 
+    #if DEBUG
+    /// Feed a timeline straight in. Reaching the once-per-game moments through
+    /// real play means waiting for a particular card to come off the deck, which
+    /// makes a test either slow, flaky, or both.
+    func _absorbForTesting(_ events: [GameEvent]) async {
+        await absorb(events)
+    }
+    #endif
+
     private func absorb(_ events: [GameEvent]) async {
-        for event in events {
+        // Indexed because one case — queens turning poisonous — needs to read
+        // the events that follow it to know what the moment costs this player.
+        for (index, event) in events.enumerated() {
             switch event {
             case .tallyChanged(let from, let to):
                 let delta = to - from
@@ -842,18 +899,32 @@ final class GameViewModel: ObservableObject {
                 )
                 try? await Task.sleep(for: .milliseconds(280))
 
-            case .queensBecamePoisonous(let trigger):
+            case .queensBecamePoisonous(let card, let trigger):
                 Haptics.shared.play(.poison)
                 SoundEngine.shared.play(.poison)
-                announce(
-                    headline: "Queens are poisonous",
-                    detail: "\(name(of: trigger)) drew one. Every held Queen is exiled.",
-                    tone: .poison
-                )
-                try? await Task.sleep(for: .milliseconds(900))
+                // The rest of this event's consequences — whose queens got
+                // exiled and what that did to their caps — arrive as separate
+                // .queenPoisoned events *after* this one. Read them ahead so the
+                // overlay can state the cost in the same breath rather than
+                // flashing a second banner behind it.
+                let mine = remainingQueenExiles(in: events, from: index)
+                withAnimation(Motion.drama) {
+                    // Whatever banner was up belongs to the previous beat; left
+                    // alone it sits behind this and reads through it.
+                    announcement = nil
+                    queenPoisoning = QueenPoisoning(
+                        card: card,
+                        triggerName: name(of: trigger),
+                        itWasYou: trigger == viewingPlayerID,
+                        yourExiledCount: mine.count,
+                        yourNewCap: mine.newCap
+                    )
+                }
+                await waitForQueenMoment()
 
             case .queenPoisoned(_, let owner, let cap):
-                if owner == viewingPlayerID {
+                // Already stated by the overlay when it was this player's queen.
+                if owner == viewingPlayerID, queenPoisoning == nil {
                     Haptics.shared.play(.poison)
                     announce(
                         headline: "Queen exiled",

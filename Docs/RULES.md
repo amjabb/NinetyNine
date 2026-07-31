@@ -27,6 +27,15 @@ On your turn you must play one legal card from your hand face-up onto the discar
 
 A card is only legal to play if it would keep the tally at or below 99 (barring the 9→Ace exception below) and it obeys any active suit-lock (from an 8).
 
+### Playing several of a rank at once
+
+If you hold two or more cards of the same rank you may play them all as one turn — a **run**. It still costs one play, and you draw back up to your cap afterwards.
+
+- The cards land **one after another**, and each is judged against the running tally as it goes. Three 5s from a tally of 90 is illegal, because the third one would reach 100 — the run is refused as a whole, not truncated.
+- Effects compound the way they would if the cards were played separately. **Two 4s reverse twice and so cancel each other out**; three reverse three times, which is a net flip. The suit-lock is a state rather than a toggle, so a run of 8s simply locks to the one suit you name.
+- A declaration covers the whole run: all the Aces in it are 1, or all are 11.
+- **Queens can't be run together** — each one has to name what it's impersonating, so they're played individually.
+
 ## Card Values & Special Effects
 
 | Card | Value | Effect |
@@ -44,9 +53,11 @@ A card is only legal to play if it would keep the tally at or below 99 (barring 
 ### The Suit-Lock (8)
 
 - Playing an 8 sets the tally +8 and requires every subsequent player to play a card of the named suit.
+- Naming a suit is **optional**: you may play an 8 and decline to lock anything, in which case the lock simply lifts.
 - Only a card of the locked suit is a legal play during the lock (an 8 of a *different* suit is **not** a legal play while a lock is active).
+- A **Queen is wild for suit as well as rank**, so a lock never blocks one. A Queen played while a lock is up may be declared an 8 and used to change the suit to anything — or to no suit at all.
 - If the legal card you play happens to be an 8 (which, to be legal, must itself be of the currently-locked suit), you may rename the suit going forward.
-- The lock stays in effect, passing suit to suit, until a player can't follow it and **skips** their turn — at that point the lock lifts and any suit is legal again.
+- The lock stays in effect, passing suit to suit, until a player can't follow it and **skips** their turn — at that point the lock lifts and any suit is legal again. It also lifts when a player is **eliminated** while it's up.
 
 ### Zero and Negative Play
 
@@ -61,7 +72,7 @@ A card is only legal to play if it would keep the tally at or below 99 (barring 
 ## Poisonous Queens
 
 - The moment any player **draws** a queen from the draw pile, queens become poisonous for the rest of the game. Every other player currently holding a queen in hand must immediately move it into their own face-down **poison pile** (in front of them, out of hand).
-- From then on, whenever a player draws a queen, it goes straight to their poison pile instead of their hand, and their maximum hand size permanently drops by one (5 → 4 → 3, per player, capped at 3). This cap reduction is personal — it doesn't affect other players.
+- From then on, whenever a player draws a queen, it goes straight to their poison pile instead of their hand, and their maximum hand size permanently drops by one — every queen costs a card, all the way down (5 → 4 → 3 → 2). Three queens down means a hand of two. The floor is 1, so a player can never be left unable to hold a card at all. This reduction is personal — it doesn't affect other players.
 - If a player's poison pile reaches **three** queens, they may declare **"Snackoo!"** (see below) to clear it.
 
 ## Snackoo
@@ -95,5 +106,7 @@ A player is eliminated when a drawn Well card isn't playable. When a player is e
 - **Repeat skips:** you can't skip on a turn where you already owe extra cards from a prior skip — you must attempt to play (or go to the Well) until that debt is cleared, to avoid infinite skip loops.
 - **9 → Ace → 100 timing:** must be the very next card played after the 9 (by anyone whose turn it is next); if any other card is played first, the tally simply stays at 99 and normal rules apply.
 - **Reverse (4) with 2 players:** no-op, since reversing direction with two players doesn't change whose turn is next.
+- **Well card that would eliminate you but completes a trio:** you're offered the Snackoo first. An unplayable well card is normally the end, so being shown the way out before being told you're out is the only reading that isn't a rules trap.
+- **Runs and the discard pile:** every card in a run lands on the pile in the order it was played; the last one is the active card.
 
 Let me know if any of these should work differently — otherwise I'll treat this as final and move on to scoping the app (multiplayer rooms, AI opponent, Facebook login/friends).

@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.0` (`MARKETING_VERSION`) / `1` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.1` (`MARKETING_VERSION`) / `4` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -25,6 +25,33 @@ few steps are yours. They should take about twenty minutes.
 | Release archive | ✅ builds clean from a fresh clone (`Scripts/archive.sh`) |
 | Support URL | ✅ the GitHub repo (see below) |
 | Privacy policy URL | ✅ `PRIVACY.md` in the repo (see below) |
+
+---
+
+## What's New — version 1.1 (build 4)
+
+Paste this into App Store Connect's "What's New in This Version", and into the
+TestFlight build's test notes.
+
+```
+Online multiplayer over Game Center — play 99 against friends, a turn at a time.
+
+Rules fixes, all reported from real games:
+• Your hand settles to five however many you were dealt.
+• The dealer chooses the hand size before every deal, rematches included.
+• You pick which of your two well cards to turn over.
+• A well card that completes three of a kind now offers you the Snackoo before
+  telling you you're out.
+• Poisoned queens are kept, not discarded — three of them is still a Snackoo —
+  and each one costs a card of hand limit, all the way down.
+• A Queen ignores the suit lock whatever suit she is, and can move the lock
+  anywhere. Playing an 8 no longer forces you to lock a suit at all, and the
+  lock lifts when a player is knocked out.
+
+New: press and hold a card to play two or more of a rank as a single turn.
+New: drawing the Queen that turns them poisonous now gets the moment it
+deserves instead of a banner you could miss.
+```
 
 ---
 

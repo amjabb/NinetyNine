@@ -29,7 +29,10 @@ enum GameEvent: Equatable, Sendable {
     case drawPileReshuffled
 
     // Queens
-    case queensBecamePoisonous(trigger: String)
+    /// Carries the actual card so the moment can show the queen that did it —
+    /// this is the one turn in the game where the state changes for everybody at
+    /// once, and it needs to land as an event, not a line of text.
+    case queensBecamePoisonous(card: Card, trigger: String)
     case queenPoisoned(card: Card, owner: String, newHandCap: Int)
 
     // Snackoo

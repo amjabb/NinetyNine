@@ -47,10 +47,11 @@ final class FlowUITests: XCTestCase {
 
         // Every collapsible section should expand.
         for title in ["Taking a turn", "The suit lock (8)", "The 9 and the 100", "The well"] {
-            let header = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
-            if header.exists {
-                header.tap()
-            }
+            expandSection(title)
+            XCTAssertTrue(
+                app.staticTexts["Ninety-Nine"].exists,
+                "Tapping the \"\(title)\" header left the rulebook"
+            )
         }
         ShotCollector.capture(app, name: "03-rules-expanded")
 
@@ -58,6 +59,8 @@ final class FlowUITests: XCTestCase {
         app.swipeUp()
         ShotCollector.capture(app, name: "04-rules-cards")
 
+        // Back is pinned over the scroll view, so it's reachable at any offset.
+        XCTAssertTrue(button("Back").waitForExistence(timeout: 6))
         button("Back").tap()
         XCTAssertTrue(playButton.waitForExistence(timeout: 5), "Back should return to the menu")
     }
@@ -171,6 +174,8 @@ final class FlowUITests: XCTestCase {
         // deal happens to produce.
         playUntilGameOver(moveBudget: 260)
 
+        ShotCollector.capture(app, name: "39-end-of-budget")
+
         // Whatever happened, the game must have reached a resolution.
         XCTAssertTrue(
             app.buttons["Rematch"].waitForExistence(timeout: 60),
@@ -281,6 +286,16 @@ final class FlowUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.2)
 
             if app.buttons["Rematch"].exists { return }
+
+            // Queens turning poisonous takes the whole screen and waits for a
+            // tap. Left alone it self-dismisses after a few seconds, but that
+            // burns move budget the rest of the game needs.
+            let queenMoment = app.otherElements["queen-poison-overlay"]
+            if queenMoment.exists {
+                queenMoment.tap()
+                continue
+            }
+
             if resolveDeclarationSheetIfPresent() { continue }
 
             // Query each control only in the state where it actually exists —
@@ -306,6 +321,34 @@ final class FlowUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Well card", "Your last well card")
         ).firstMatch
         return tapSteadily(card)
+    }
+
+    /// Tap a section header, keeping clear of the Back button.
+    ///
+    /// Back is pinned over the bottom of the scroll view. `element.tap()` scrolls
+    /// its target into view and taps wherever it lands — and if that's the bottom
+    /// strip, the tap goes to Back and the test leaves the screen entirely.
+    /// Adding one section to the rulebook was enough to make that happen.
+    private func expandSection(_ title: String) {
+        let header = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS %@", title)
+        ).firstMatch
+        guard header.exists else { return }
+
+        let back = button("Back")
+        for _ in 0..<4 {
+            guard header.exists, header.isHittable else { return }
+            let frame = header.frame
+            if !back.exists || !frame.intersects(back.frame) {
+                app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+                    .tap()
+                return
+            }
+            // It's under the button — bring it up and look again.
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.3)
+        }
     }
 
     // MARK: - Helpers

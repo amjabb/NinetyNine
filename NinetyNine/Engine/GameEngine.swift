@@ -306,7 +306,7 @@ final class GameEngine {
 
         if !state.queensArePoisonous {
             state.queensArePoisonous = true
-            events.append(.queensBecamePoisonous(trigger: owner.id))
+            events.append(.queensBecamePoisonous(card: queen, trigger: owner.id))
             note("Queens turn poisonous — \(owner.name) drew one.")
 
             // Everyone's held queens are exiled, the triggering player included — an
