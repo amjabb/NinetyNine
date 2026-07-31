@@ -178,6 +178,47 @@ final class GameKitPayloadTests: XCTestCase {
         )
     }
 
+    /// A run is one action carrying several card IDs. If it didn't survive the
+    /// wire it would desync every peer the moment someone played a pair — and
+    /// silently, since the log would still apply cleanly up to that point.
+    func testARunOfCardsSurvivesTheWireAndReplaysIdentically() throws {
+        let seats: [(String, String, PlayerState.PlayerKind)] = [
+            ("G:1", "Ada", .human), ("G:2", "Bo", .human),
+        ]
+        let source = try GameEngine(seats: seats, dealerIndex: 1, handSize: 7, seed: 31337)
+
+        // Force a hand that holds a run, so the test doesn't depend on the deal.
+        var seeded = source.state
+        let seat = try XCTUnwrap(seeded.players.firstIndex { $0.id == "G:1" })
+        let run = [Suit.spades, .hearts, .clubs].enumerated().map {
+            Card(id: 900 + $0.offset, rank: .three, suit: $0.element)
+        }
+        seeded.players[seat].hand = run
+        seeded.currentPlayerIndex = seat
+        seeded.tally = 12
+        source._replaceStateForTesting(seeded)
+
+        let submitted = SubmittedAction(
+            playerID: "G:1",
+            action: .playSet(cardIDs: run.map(\.id), declaration: .plain),
+            sequence: 0
+        )
+        try source.apply(submitted)
+        XCTAssertEqual(source.state.tally, 21)
+
+        let data = try JSONEncoder().encode(payload(actions: [submitted]))
+        let received = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
+        XCTAssertEqual(received.actions, [submitted], "The card IDs have to arrive in order")
+
+        let replay = try GameEngine(seats: seats, dealerIndex: 1, handSize: 7, seed: 31337)
+        replay._replaceStateForTesting(seeded)
+        for action in received.actions { try replay.apply(action) }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        XCTAssertEqual(try encoder.encode(replay.state), try encoder.encode(source.state))
+    }
+
     // MARK: - Participants
 
     func testParticipantsFromThePayloadAreRemoteHumans() {

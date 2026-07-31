@@ -26,6 +26,13 @@ struct NinetyNineApp: App {
         if arguments.contains("-uitest-showcase") {
             Records.shared.seedShowcase()
         }
+        // A test that needs a particular hand — a pair to run, a queen to draw —
+        // can't wait for one to turn up by luck. This pins the shuffle.
+        if let index = arguments.firstIndex(of: "-uitest-seed"),
+           index + 1 < arguments.count,
+           let seed = UInt32(arguments[index + 1]) {
+            UITestSeed.value = seed
+        }
     }
 
     var body: some Scene {
@@ -34,4 +41,10 @@ struct NinetyNineApp: App {
                 .preferredColorScheme(.dark)
         }
     }
+}
+
+/// The pinned shuffle seed for UI tests. Nil in every shipped build — nothing
+/// sets it but the launch argument above.
+enum UITestSeed {
+    nonisolated(unsafe) static var value: UInt32?
 }

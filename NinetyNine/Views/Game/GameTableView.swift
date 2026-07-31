@@ -281,10 +281,10 @@ struct GameTableView: View {
                 suppressedCardID: viewModel.pendingChoice.map { $0.card.id },
                 rejectedCardID: viewModel.rejection?.cardID,
                 isInteractive: viewModel.isYourTurn && !viewModel.isDealing,
-                isDealing: viewModel.isDealing
-            ) { card in
-                viewModel.tapCard(card)
-            }
+                isDealing: viewModel.isDealing,
+                onPlay: { viewModel.tapCard($0) },
+                onLongPress: { viewModel.longPressCard($0) }
+            )
             .frame(height: fanHeight)
         }
         .padding(.bottom, 2)
@@ -354,6 +354,18 @@ struct GameTableView: View {
                 onCancel: { viewModel.cancelWellChoice() },
                 onSnackoo: { viewModel.takeWellSnackoo() },
                 onDecline: { viewModel.declineWellSnackoo() }
+            )
+        }
+
+        if let pending = viewModel.pendingSet {
+            SetPlaySheet(
+                pending: pending,
+                currentTally: viewModel.view?.tally ?? 0,
+                declarations: viewModel.setDeclarations,
+                projected: { viewModel.projectedSetTally($0) },
+                onToggle: { viewModel.toggleSetCard($0) },
+                onPlay: { viewModel.playSet(declaration: $0) },
+                onCancel: { viewModel.cancelSet() }
             )
         }
 

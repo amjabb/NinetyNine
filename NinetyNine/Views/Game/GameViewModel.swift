@@ -45,6 +45,8 @@ final class GameViewModel: ObservableObject {
     @Published var pendingChoice: PendingChoice?
     /// Set when the player taps a card that can't legally be played.
     @Published var rejection: Rejection?
+    /// Set the player is assembling by long press. Nil almost always.
+    @Published var pendingSet: PendingSet?
     /// The achievement toast currently on screen.
     @Published var achievementToast: Achievement?
     /// True while cards are being dealt at the start of a game.
@@ -102,6 +104,20 @@ final class GameViewModel: ObservableObject {
         var card: Card
         var options: [Declaration]
         var isFromWell: Bool
+    }
+
+    /// A run of same-ranked cards the player is assembling. Reached only by a
+    /// long press, so the ordinary tap-to-play path is untouched — hoarding nines
+    /// for the endgame shouldn't mean dismissing a prompt every turn.
+    struct PendingSet: Identifiable, Equatable {
+        let id = UUID()
+        var rank: Rank
+        /// Every card of this rank in hand, in the order they're held.
+        var available: [Card]
+        /// Chosen cards, in the order they'll be played.
+        var selected: [Card]
+
+        var canPlay: Bool { selected.count > 1 }
     }
 
     struct Rejection: Identifiable, Equatable {
@@ -338,7 +354,7 @@ final class GameViewModel: ObservableObject {
 
     func tapCard(_ card: Card) {
         guard isYourTurn, !isDealing, wellReveal == .idle, pendingChoice == nil,
-              let view else { return }
+              pendingSet == nil, let view else { return }
 
         let declarations = Rules.legalDeclarations(for: card, in: view.rulesContext())
         guard !declarations.isEmpty else {
@@ -357,6 +373,133 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Sets
+
+    /// Long press. Opens the set builder when the pressed card has company of
+    /// the same rank; otherwise it's a no-op, because a long press that does
+    /// nothing visible is better than one that scolds you.
+    func longPressCard(_ card: Card) {
+        guard isYourTurn, !isDealing, wellReveal == .idle,
+              pendingChoice == nil, pendingSet == nil, let view else { return }
+
+        let matching = view.yourHand.filter { $0.rank == card.rank }
+        guard matching.count > 1 else { return }
+
+        let context = view.rulesContext()
+        guard card.rank != .queen else {
+            reject(card, message: "Queens can't be run together — each one has to name what it is.")
+            return
+        }
+        // If even a pair would bust, say so rather than opening a builder in
+        // which every combination is refused.
+        guard Rules.playableSetRanks(for: context.players[context.currentPlayerIndex], in: context)
+            .contains(card.rank) else {
+            reject(card, message: "Two \(card.rank.plural) would push the tally past 99.")
+            return
+        }
+
+        Haptics.shared.play(.cardLift)
+        SoundEngine.shared.play(.cardLift, volume: 0.6)
+        withAnimation(Motion.panel) {
+            // Open with the pressed card and its first partner already chosen —
+            // a pair is the common case and the builder should start useful.
+            let partner = matching.first { $0.id != card.id }
+            pendingSet = PendingSet(
+                rank: card.rank,
+                available: matching,
+                selected: [card, partner].compactMap { $0 }
+            )
+        }
+    }
+
+    /// Add or remove a card from the run. The pressed card can be removed like
+    /// any other — what matters is the count and the rank, not which copies.
+    func toggleSetCard(_ card: Card) {
+        guard var pending = pendingSet else { return }
+        if let index = pending.selected.firstIndex(where: { $0.id == card.id }) {
+            pending.selected.remove(at: index)
+        } else {
+            pending.selected.append(card)
+        }
+        Haptics.shared.play(.select)
+        withAnimation(Motion.panel) { pendingSet = pending }
+    }
+
+    /// Declarations that are legal for the run as currently selected. A run of
+    /// plain cards has exactly one, and the sheet plays it without asking.
+    var setDeclarations: [Declaration] {
+        guard let pending = pendingSet, pending.canPlay, let view else { return [] }
+        return Rules.legalDeclarations(forSet: pending.selected, in: view.rulesContext())
+    }
+
+    /// The tally the current selection would produce under a given declaration,
+    /// or nil if it isn't legal. Drives the live preview.
+    func projectedSetTally(_ declaration: Declaration) -> Int? {
+        guard let pending = pendingSet, pending.canPlay, let view else { return nil }
+        switch Rules.resolveSet(cards: pending.selected, declaration: declaration, in: view.rulesContext()) {
+        case .success(let effect): return effect.newTally
+        case .failure: return nil
+        }
+    }
+
+    func cancelSet() {
+        Haptics.shared.play(.select)
+        withAnimation(Motion.panel) { pendingSet = nil }
+    }
+
+    func playSet(declaration: Declaration) {
+        guard let pending = pendingSet, pending.canPlay else { return }
+        let cards = pending.selected
+        withAnimation(Motion.panel) { pendingSet = nil }
+        Task { await commitSet(cards: cards, declaration: declaration) }
+    }
+
+    private func commitSet(cards: [Card], declaration: Declaration) async {
+        guard let actor = viewingPlayerID, let last = cards.last else { return }
+
+        Haptics.shared.play(.cardFlick)
+        SoundEngine.shared.play(.cardFlick)
+        withAnimation(Motion.cardFlight) { cardInFlight = last }
+
+        let before = coordinator.actionLog.count
+        await coordinator.submit(
+            .playSet(cardIDs: cards.map(\.id), declaration: declaration),
+            by: actor
+        )
+
+        try? await Task.sleep(for: .milliseconds(150))
+        cardInFlight = nil
+
+        if let error = coordinator.lastError {
+            coordinator.lastError = nil
+            announce(headline: "Not legal", detail: error, tone: .bad)
+            return
+        }
+        guard coordinator.actionLog.count > before else { return }
+
+        announce(
+            headline: "\(cards.count) \(cards[0].rank.plural)",
+            detail: setDetail(for: cards),
+            tone: .neutral
+        )
+        await absorb(coordinator.consumeEvents())
+        await driveAITurns()
+    }
+
+    /// The one thing about a run that isn't obvious from watching it land.
+    private func setDetail(for cards: [Card]) -> String {
+        switch cards[0].rank {
+        case .four:
+            return cards.count % 2 == 0
+                ? "Reversed \(cards.count) times — play carries on the way it was."
+                : "Reversed \(cards.count) times — the direction flips."
+        case .nine:
+            return "All in one go."
+        default:
+            return "Played as a run."
+        }
+    }
+
     func chooseDeclaration(_ declaration: Declaration) {
         guard let choice = pendingChoice else { return }
         withAnimation(Motion.panel) { pendingChoice = nil }
@@ -368,10 +511,11 @@ final class GameViewModel: ObservableObject {
         withAnimation(Motion.panel) { pendingChoice = nil }
     }
 
-    private func reject(_ card: Card) {
+    private func reject(_ card: Card, message customMessage: String? = nil) {
         Haptics.shared.play(.rejected)
         SoundEngine.shared.play(.reject, volume: 0.7)
-        let message = view.flatMap { Rules.blockingReason(for: card, in: $0.rulesContext())?.explanation }
+        let message = customMessage
+            ?? view.flatMap { Rules.blockingReason(for: card, in: $0.rulesContext())?.explanation }
             ?? "That card can't be played right now."
         withAnimation(Motion.panel) { rejection = Rejection(cardID: card.id, message: message) }
         Task {

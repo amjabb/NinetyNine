@@ -71,6 +71,14 @@ enum Rank: String, CaseIterable, Codable, Hashable, Sendable {
         }
     }
 
+    /// For talking about a run of them: "three Sixes", "two Aces".
+    var plural: String {
+        switch self {
+        case .six: return "Sixes"
+        default: return displayName + "s"
+        }
+    }
+
     /// True for ranks that carry a special ability rather than a plain value.
     var isSpecial: Bool {
         switch self {

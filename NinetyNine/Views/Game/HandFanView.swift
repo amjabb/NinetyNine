@@ -9,7 +9,8 @@
 //
 //  Interaction: tap to play, or drag a card upward past a threshold to throw it.
 //  Both routes end in the same call, so there's no second code path to keep
-//  correct.
+//  correct. A long press is the separate, deliberate gesture for playing several
+//  of a rank at once — see SetPlaySheet for why it isn't on the tap path.
 //
 
 import SwiftUI
@@ -25,6 +26,8 @@ struct HandFanView: View {
     /// Staggered entrance for the opening deal.
     var isDealing: Bool
     var onPlay: (Card) -> Void
+    /// Long press. Opens the run builder when the card has company of its rank.
+    var onLongPress: (Card) -> Void = { _ in }
 
     @Environment(\.motion) private var motion
     @State private var draggingID: Int?
@@ -88,6 +91,10 @@ struct HandFanView: View {
             .opacity(isSuppressed ? 0 : 1)
             .zIndex(isDragging ? 1_000 : Double(index))
             .allowsHitTesting(isInteractive && !isSuppressed)
+            // Order matters: the long press has to be recognised before the
+            // drag, or lifting a card to throw it would start a 0.4s timer that
+            // fires the moment the drag settles.
+            .onLongPressGesture(minimumDuration: 0.4) { onLongPress(card) }
             .gesture(dragGesture(for: card, isPlayable: isPlayable))
             .onTapGesture { onPlay(card) }
             // Stable identity for UI tests, and a value VoiceOver can read to

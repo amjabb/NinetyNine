@@ -203,7 +203,8 @@ struct RootView: View {
                 opponentCount: settings.opponentCount,
                 handSize: handSize,
                 playerName: settings.playerName,
-                dealerID: dealerID
+                dealerID: dealerID,
+                seed: UITestSeed.value
             )
         case .passAndPlay:
             activeGame = .passAndPlay(
