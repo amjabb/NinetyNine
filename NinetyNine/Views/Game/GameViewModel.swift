@@ -147,6 +147,9 @@ final class GameViewModel: ObservableObject {
         let id = UUID()
         var headline: String
         var detail: String
+        /// The three that went. Shown to everyone — a Snackoo is a public
+        /// declaration, and the cards are the whole claim.
+        var cards: [Card]
         var isYours: Bool
     }
 
@@ -1118,7 +1121,7 @@ final class GameViewModel: ObservableObject {
                     try? await Task.sleep(for: .milliseconds(400))
                 }
 
-            case .snackoo(let by, let kind):
+            case .snackoo(let by, let kind, let cards):
                 // Everyone's, not just yours. A Snackoo can happen out of turn,
                 // to anyone, and it's the one move in 99 that's purely good —
                 // the table should get to see it rather than read about it in a
@@ -1130,6 +1133,7 @@ final class GameViewModel: ObservableObject {
                     snackooMoment = SnackooMoment(
                         headline: mine ? "SNACKOO!" : "\(name(of: by)): Snackoo!",
                         detail: snackooDetail(kind),
+                        cards: cards,
                         isYours: mine
                     )
                 }

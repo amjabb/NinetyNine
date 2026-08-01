@@ -59,9 +59,9 @@ If you hold two or more cards of the same rank you may play them all as one turn
 
 - Playing an 8 sets the tally +8 and requires every subsequent player to play a card of the named suit.
 - Naming a suit is **optional**: you may play an 8 and decline to lock anything, in which case the lock simply lifts.
-- Only a card of the locked suit is a legal play during the lock — with two exceptions:
-  - **An 8 of any suit, played directly on another 8.** That is how the lock changes hands: whoever follows an 8 may answer with an 8 of their own, whatever its suit, and re-point the lock (or drop it). Once any other card lands on top, the lock is binding again and an off-suit 8 is as dead as anything else.
-  - **A Queen**, which is wild for suit as well as rank, so a lock never blocks one. A Queen may be declared an 8 and used to seize the lock and send it anywhere — or nowhere. Having done so she counts as an 8 on the pile, so the next player inherits the same opening.
+- **Follow the suit, or answer the card.** A lock is beaten either by playing the locked suit, or by playing a card of the **same rank as the one face up**, whatever suit it is — and in that case the lock moves to the suit you just played. A six on a six escapes a hearts lock and locks yours instead.
+- **An 8 names its own suit** rather than inheriting yours, since choosing a suit is what an 8 is for. It may also decline and lock nothing.
+- **A Queen** is wild for suit as well as rank, so a lock never blocks one. Declared an 8, she seizes the lock and sends it anywhere — or nowhere. Having done so she counts as an 8 on the pile, so the next player may answer her with an 8.
 - If the legal card you play happens to be an 8 (which, to be legal, must itself be of the currently-locked suit), you may rename the suit going forward.
 - The lock stays in effect, passing suit to suit, until a player can't follow it and **skips** their turn — at that point the lock lifts and any suit is legal again. It also lifts when a player is **eliminated** while it's up.
 

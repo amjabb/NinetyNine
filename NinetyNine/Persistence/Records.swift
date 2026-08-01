@@ -184,7 +184,7 @@ final class Records: ObservableObject {
                 if state.discardPile.last != nil { stats.hundredsReached += 1 }
             case .suitLocked(_, let by) where by == humanID:
                 stats.suitsLocked += 1
-            case .snackoo(let by, _) where by == humanID:
+            case .snackoo(let by, _, _) where by == humanID:
                 stats.snackoosDeclared += 1
             case .wellRevealed(_, let by, let playable) where by == humanID:
                 if playable { stats.wellsSurvived += 1 } else { stats.wellsFatal += 1 }

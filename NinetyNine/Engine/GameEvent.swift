@@ -42,7 +42,9 @@ enum GameEvent: Equatable, Sendable {
     case handCapRestored(to: Int, for: String)
 
     // Snackoo
-    case snackoo(by: String, kind: SnackooKind)
+    /// - Parameter cards: the three that went. Public — a Snackoo is announced
+    ///   to the table, and "which three?" is the first thing anyone asks.
+    case snackoo(by: String, kind: SnackooKind, cards: [Card])
 
     // The well
     /// The two face-down well cards were shuffled before one was picked. Public

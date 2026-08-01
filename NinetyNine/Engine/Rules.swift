@@ -288,19 +288,23 @@ enum Rules {
             return .failure(.cannotGoNegativeExceptFromZero(resulting: newTally))
         }
 
-        // Two things get past a lock:
-        //
-        //  * a Queen, which is wild for *suit* as well as rank;
-        //  * an 8 of any suit played **directly on another 8** — that's how the
-        //    lock changes hands. An 8 played on anything else has to follow the
-        //    lock like everything else, so a lock can't be shrugged off at any
-        //    point by whoever happens to be holding one.
-        //
-        // Everything else is judged on its printed suit.
-        let ignoresLock = card.rank == .queen
-            || (effectiveRank == .eight && state.topPlayedAsEight)
-        if let lock = state.suitLock, !ignoresLock, card.suit != lock.suit {
-            return .failure(.suitLocked(lock.suit))
+        // Follow the suit, or answer the card. `lockBlocking` is the single
+        // definition of what gets past a lock — a Queen, or a card matching the
+        // rank of the one face up.
+        let blockedBy = lockBlocking(card, in: state)
+        if let suit = blockedBy {
+            return .failure(.suitLocked(suit))
+        }
+
+        // Beating a lock by rank drags it to the suit you played, so the next
+        // player is following *your* suit. An 8 is the exception: it names a
+        // suit of its own (or declines), and that choice wins.
+        var movesLockToOwnSuit = false
+        if let lock = state.suitLock,
+           card.suit != lock.suit,
+           card.rank != .queen,
+           effectiveRank != .eight {
+            movesLockToOwnSuit = true
         }
 
         return .success(CardEffect(
@@ -308,7 +312,7 @@ enum Rules {
             effectiveRank: effectiveRank,
             effectiveSuit: card.suit,
             reversesDirection: reverses,
-            locksSuit: locksSuit,
+            locksSuit: movesLockToOwnSuit ? card.suit : locksSuit,
             liftsSuitLock: effectiveRank == .eight && locksSuit == nil,
             setsForcedNegativeNext: newTally == hundredException,
             isNine: isNine,
@@ -457,9 +461,28 @@ enum Rules {
     /// legally take over a lock was reported as blocked by it.
     static func lockBlocking(_ card: Card, in state: GameState) -> Suit? {
         guard let lock = state.suitLock else { return nil }
+        if card.suit == lock.suit { return nil }
+        // A Queen is wild for suit as well as rank.
         if card.rank == .queen { return nil }
-        if card.rank == .eight && state.topPlayedAsEight { return nil }
-        return card.suit == lock.suit ? nil : lock.suit
+        // Matching the rank of the card on the table gets you past the lock,
+        // whatever suit you're holding — and drags the lock over to your suit.
+        // That's what makes a lock survivable: you follow the suit *or* you
+        // answer the card, exactly as you would in any matching game.
+        if card.rank == topPlayedRank(in: state) { return nil }
+        return lock.suit
+    }
+
+    /// The rank the face-up card counts as, which is what a rank match is
+    /// measured against. A Queen played as an 8 is an 8 for this purpose, so the
+    /// next player can answer her with an 8.
+    static func topPlayedRank(in state: GameState) -> Rank? {
+        // The flag answers first, and without needing the pile. A run resolves
+        // against a running state that tracks what the last card *counted as*
+        // but never appends to the discard pile, so asking the pile first made
+        // the second 8 of a run of 8s illegal under the lock the first one had
+        // just set.
+        if state.topPlayedAsEight { return .eight }
+        return state.topOfDiscard?.rank
     }
 
     /// Why a run of these cards can't be played, in the player's words.

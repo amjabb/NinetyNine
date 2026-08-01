@@ -17,6 +17,8 @@ import SwiftUI
 struct SnackooCelebration: View {
     let headline: String
     let detail: String
+    /// The three cards being declared, face up.
+    var cards: [Card] = []
     /// Whose it was, for the colour of the burst.
     var isYours: Bool
 
@@ -40,11 +42,29 @@ struct SnackooCelebration: View {
             }
             .allowsHitTesting(false)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 14) {
                 Text(headline)
                     .font(.system(size: 34, weight: .black, design: .serif))
                     .foregroundStyle(isYours ? Palette.brassLight : Palette.ivory)
                     .shadow(color: Palette.brass.opacity(0.7), radius: 22)
+
+                // The claim itself. A Snackoo is a declaration made out loud at
+                // a table and answered by showing the cards; saying only "three
+                // Jacks" asks everyone to take your word for it.
+                if !cards.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                            CardFaceView(card: card)
+                                .frame(width: 74)
+                                .cardShadow(lift: 16)
+                                .rotationEffect(.degrees(Double(index - 1) * 7))
+                                .offset(y: abs(Double(index - 1)) * 5)
+                                .scaleEffect(textScale)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
                 Text(detail)
                     .font(Typography.body)
                     .foregroundStyle(Palette.ivory.opacity(0.9))

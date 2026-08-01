@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.5` (`MARKETING_VERSION`) / `7` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.6` (`MARKETING_VERSION`) / `8` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,101 +28,77 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.5 (build 7)
+## What's New — version 1.6 (build 8)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
-since has only reached TestFlight — so anyone updating from the store has not
-seen online play, the chosen well, or any of the rules corrections. The store
-text is cumulative for that reason. The TestFlight note is only the delta from
-build 5.
+since has only reached TestFlight — so anyone updating from the store has seen
+none of it. The store text is cumulative. The TestFlight note is the delta from
+1.5.
 
 ### App Store — "What's New in This Version"
 
 ```
-YOUR WELL IS NOW YOURS TO BUILD — AND YOU BUILD IT BLIND
+A SMALLER HAND, AND A WELL YOU BUILD YOURSELF
 
-Everything the dealer deals goes to your hand, and before a card is played you
-bury two of it face down as your well. You don't get to look. Nobody knows
-what's in a well, including you, right up until the turn you're forced to open
-it — and when that turn comes you can shake the phone to shuffle the two, the
-way you would at a table.
+You hold three cards now, not five. Three is barely a hand: there is rarely a
+safe card and a brake and an out all at once, so most turns are a choice between
+bad options rather than a hunt for the best one — and the tally climbs faster,
+because nobody can sit on a 10 waiting for the right moment.
 
-So the dealer's number isn't a hand size any more, it's how many cards to deal.
-Deal seven and you start holding five and play down to three. Deal five and
-you're at three from the off. Deal three and you're burying two of three — no
-choice at all, which is its own kind of cruelty.
+Your well is yours to build, and you build it blind. Everything the dealer deals
+goes to your hand, and before a card is played you bury two of it face down. You
+don't get to look. When you're finally forced to open it you can shake the phone
+to shuffle the two first, the way you would at a table.
 
-Three cards is barely a hand. There is rarely a safe card and a brake and an out
-all at once, so most turns are a choice between bad options rather than a hunt
-for the best one.
+So the dealer's number isn't a hand size, it's how many cards to deal. Deal
+seven and you open with five and play down to three. Deal three and you're
+burying two of three — no choice at all, which is its own kind of cruelty.
+
+THE SUIT LOCK IS SURVIVABLE
+
+Follow the locked suit, or answer the card: play the same rank as the one face
+up, whatever suit you're holding, and the lock moves to your suit. A Queen
+ignores the lock entirely.
 
 ALSO NEW SINCE 1.0
 
 • Online multiplayer over Game Center. Play a turn, put the phone down, come
   back tomorrow.
 • Pass and play for two to six on one device, with the screen covering itself
-  between turns — including while each player builds their well.
+  between turns — including while each player buries their well.
 • Press and hold a card to play every copy of it you're holding as one turn. Two
   fours reverse twice and cancel out; three flip the direction once.
-• The whole table watches when somebody goes to the well, and gets a moment when
-  they survive it.
-• The turn queens go poisonous now takes the screen instead of sliding past.
-• The table says who plays next, and marks anyone who skipped and owes two.
-
-RULES, CORRECTED
-
-• Your hand settles to three however many you were dealt.
-• The dealer chooses the deal before every game, rematches included.
-• You choose which of your two well cards to turn over.
-• A well card that completes three of a kind offers you the Snackoo before
-  telling you you're out.
-• Poisoned queens are kept, not discarded — three of them is still a Snackoo —
-  and each one costs a card of hand limit, all the way down.
-• A Queen ignores the suit lock whatever suit she is. Played as an 8 she asks
-  where to point the lock, instead of choosing for you.
-• An 8 of any suit can take over a lock — but only played directly on another 8.
-• Playing an 8 never forces you to lock a suit, and the lock lifts when a player
-  is knocked out.
+• A Snackoo is announced to the whole table, cards and all.
+• The whole table watches when somebody goes to the well, and sees the card they
+  didn't pick if it ends them.
+• The turn queens go poisonous takes the screen instead of sliding past.
+• The tally wheel says which way play is going, and the table says who's next.
 ```
 
-### TestFlight — test notes for 1.5 (build 7)
+### TestFlight — test notes for 1.6 (build 8)
 
 ```
-FIXED IN 1.5 — please re-test anything to do with the well. In 1.4 a well card
-that turned out playable was revealed, celebrated, and then never actually
-played: the tally didn't move and a Queen never asked what it was.
+THE HAND IS THREE. Everything else follows from that — please play a few rounds
+before judging any single change.
 
-Also fixed since 1.4:
-• Clearing three poisoned queens gives back the hand capacity they cost. It was
-  handing you three cards into a hand that could only hold two.
-• A run refused because of a suit lock said it would bust instead.
-• Your dealt cards were visible before your own well pick on a rematch.
-• A Snackoo now gets confetti, for the whole table.
-• The other well card is turned over before you're told you've lost.
+Fixed since 1.5, both reported:
+• Nobody draws on somebody else's turn any more. Turn order advances as part of
+  the previous player's move, and the hand top-up was riding along with it — so
+  in pass-and-play, the next player's cards were drawn on the previous player's
+  screen. If one was a queen, queens turned poisonous and were announced during
+  a turn that had nothing to do with them. Every hand is now brought to its cap
+  once, at the deal.
+• A Snackoo shows the three cards, to everyone.
 
-FROM 1.4
+New rule: under a suit lock you can play a card matching the RANK of the one
+face up, any suit, and the lock moves to the suit you played. An 8 still names
+its own suit rather than inheriting yours.
 
-Shake the phone on the "pick one" screen and your two well cards shuffle. It's
-a real shuffle — seeded and recorded like every other move, so everyone's game
-agrees — not an animation over a fixed order. There's a Shuffle button too, since
-a shake is undiscoverable and not everyone can do one. Deliberately NOT available
-while you're burying your well at the start.
+Poisoned queens now bite hard against a hand of three — one queen and you hold
+two, two and you hold one — so clearing three with a Snackoo gives that capacity
+back.
 
-Fixed since build 5, all reported from play:
-• Holding three of a rank, only two could be played. The builder opened on a
-  pair and greyed the rest so hard they looked disabled. It now opens on every
-  copy you hold, trimmed to the longest run that's actually legal.
-• Underneath that, a real one: holding three of a rank where all three would
-  bust made the rank un-runnable outright — the long press did nothing at all.
-• Surviving the well gets a moment now, with the two-card reward named.
-• Everyone sees a player go to the well. It used to be invisible from every seat
-  but the one it was happening to.
-• The table says who plays next — "then Bo", or "then you".
-
-WORTH KNOWING: this build refuses online matches started in 1.2 or 1.3. A 1.4
-match still works — nothing crossing the wire changed between 1.4 and 1.5. Those
-clients can't read the shuffle action, so their match would quietly stop
-updating rather than fail loudly. Anything in flight from them needs restarting.
+WORTH KNOWING: this build refuses online matches started before 1.4.
 
 STILL UNTESTED: two-device Game Center has never run against a real network.
 Turn passing, quitting mid-match, and invitations are what to hammer.

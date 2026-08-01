@@ -230,9 +230,9 @@ struct RuleSection: Identifiable {
             points: [
                 "Playing an 8 adds 8 and locks the suit. Everyone after you must follow it.",
                 "Naming a suit is optional — you can play an 8 and lock nothing.",
-                "Only cards of the locked suit are legal while it holds.",
-                "The exception: an 8 of ANY suit played directly on another 8. That's how the lock changes hands — answer an 8 with an 8 and point it wherever you like.",
-                "Once any other card lands on top, the lock is binding again and an off-suit 8 is as dead as anything else.",
+                "Follow the locked suit — or answer the card. A card of the same RANK as the one face up is legal whatever its suit, and the lock moves to the suit you played.",
+                "So a six on a six gets you out of a hearts lock and locks your suit instead. A lock is survivable; it just costs you the card that matches.",
+                "An 8 is the exception that still names its own suit rather than inheriting yours.",
                 "A Queen ignores the lock entirely, whatever suit she is. Declare her an 8 to seize it — and she leaves an 8 face up, so the next player gets the same opening.",
                 "The lock breaks when somebody can't follow it and skips, or when a player is knocked out while it's up.",
             ]

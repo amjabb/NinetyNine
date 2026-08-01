@@ -409,21 +409,36 @@ final class GameEngine {
         if !state.isChoosingWells {
             events.append(.wellSelectionFinished)
             note("\(state.currentPlayer.name) leads.")
-            // The leader may be starting below the cap — a small deal leaves a
-            // short hand, and the top-up is owed at the start of a turn.
-            events += topUpForTurn()
+            // Everyone at once, here at the deal — not each player at the start
+            // of their own turn.
+            //
+            // Turn order advances as part of the *previous* player's action, so
+            // a top-up there drew cards for the incoming player while the
+            // outgoing one was still holding the device. In pass-and-play that
+            // put somebody else's draw on your screen, and a queen drawn that
+            // way announced itself during a turn it had nothing to do with.
+            //
+            // Nothing else needs it: refill after a play already returns a hand
+            // to its cap, and a cap only ever falls.
+            events += topUpEveryoneForTheOpeningHand()
         }
         return events
     }
 
-    /// Draw the current player up to their cap before they act.
+    /// Bring every hand up to its cap once the wells are buried.
     ///
-    /// Deal 5 and two go to the well, so play opens with three in hand and two
-    /// owed. Refilling only *after* a play would leave that player choosing from
-    /// three cards on the turn where they can least afford it.
-    private func topUpForTurn() -> [GameEvent] {
+    /// A small deal opens short — deal three and two of them go to the well —
+    /// so somebody has to draw before the first card is played. Doing it for
+    /// everyone here, at the deal, keeps every draw attributable to the moment
+    /// it happens rather than to whoever happened to be holding the device.
+    private func topUpEveryoneForTheOpeningHand() -> [GameEvent] {
         guard !state.isOver, !state.isChoosingWells else { return [] }
-        return refillHand(seat: state.currentPlayerIndex)
+        var events: [GameEvent] = []
+        // Dealing order, so a queen turning up is deterministic on every client.
+        for seat in state.players.indices where !state.players[seat].isEliminated {
+            events += refillHand(seat: seat)
+        }
+        return events
     }
 
     private func finishOnePlay(seat: Int) -> [GameEvent] {
@@ -463,11 +478,6 @@ final class GameEngine {
         state.players[index].owesExtraPlay = false
         state.pendingWell = nil
         events.append(.turnAdvanced(to: state.players[index].id, owesTwo: owesTwo))
-        // Top up before they act, not after. Normally a no-op — a hand is
-        // already at cap when its turn comes round — but it matters on the
-        // opening turns of a small deal, and after a poisoned queen changes
-        // someone's cap.
-        events += topUpForTurn()
         return events
     }
 
@@ -619,10 +629,12 @@ final class GameEngine {
         }
         var events: [GameEvent] = []
         var replacements = 3
+        var discarded: [Card] = []
 
         switch kind {
         case .threeQueens:
             guard Rules.canSnackooPoison(state.players[seat]) else { throw GameError.snackooNotAvailable }
+            discarded = Array(state.players[seat].poisonPile.prefix(3))
             state.players[seat].poisonPile.removeFirst(3)
 
             // Clearing the queens gives back the capacity they cost. Without
@@ -643,14 +655,15 @@ final class GameEngine {
         case .threeOfAKind(let rank):
             let matching = state.players[seat].hand.filter { $0.rank == rank }
             guard matching.count >= 3 else { throw GameError.snackooNotAvailable }
-            for card in matching.prefix(3) {
+            discarded = Array(matching.prefix(3))
+            for card in discarded {
                 state.players[seat].hand.removeAll { $0.id == card.id }
                 state.discardPile.append(card)
             }
             note("\(state.players[seat].name) declares Snackoo — three \(rank.displayName)s.")
         }
 
-        events.append(.snackoo(by: playerID, kind: kind))
+        events.append(.snackoo(by: playerID, kind: kind, cards: discarded))
 
         var drawn = 0
         while drawn < replacements {
@@ -744,14 +757,19 @@ final class GameEngine {
         let matching = state.players[seat].hand.filter { $0.rank == rank }
         guard matching.count >= 2 else { throw GameError.snackooNotAvailable }
 
-        for card in matching.prefix(2) {
+        let fromHand = Array(matching.prefix(2))
+        for card in fromHand {
             state.players[seat].hand.removeAll { $0.id == card.id }
             state.discardPile.append(card)
         }
         state.discardPile.append(pending.card)
         state.pendingWell = nil
 
-        var events: [GameEvent] = [.snackoo(by: playerID, kind: .threeOfAKind(rank))]
+        // The well card leads: it's the one that completed the trio, and the one
+        // that was about to end their game.
+        var events: [GameEvent] = [
+            .snackoo(by: playerID, kind: .threeOfAKind(rank), cards: [pending.card] + fromHand)
+        ]
         note("\(state.players[seat].name) Snackoos three \(rank.displayName)s out of the well.")
 
         var drawn = 0

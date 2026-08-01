@@ -1032,3 +1032,188 @@ final class RunRefusalReasonTests: XCTestCase {
         XCTAssertFalse(text?.contains("99") ?? true, "It must not blame the tally")
     }
 }
+
+// MARK: - Beating a lock by matching the rank
+
+/// The author's rule: under a lock you may play a card of the same rank as the
+/// one face up, whatever its suit, and the lock moves to the suit you played.
+/// Follow the suit, or answer the card — the lock is survivable either way.
+///
+/// This generalises the earlier 8-on-8 rule, which was the same idea applied to
+/// exactly one rank.
+final class RankMatchBeatsTheLockTests: XCTestCase {
+
+    private func board(top: Card, lock: Suit, tally: Int = 20, asEight: Bool = false) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 3),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 3),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        state.discardPile = [top]
+        state.suitLock = SuitLock(suit: lock, setByPlayerID: "b")
+        state.topPlayedAsEight = asEight
+        return state
+    }
+
+    func testAMatchingRankGetsPastTheLock() {
+        let state = board(top: Card(id: 1, rank: .six, suit: .hearts), lock: .hearts)
+        let offSuitSix = Card(id: 2, rank: .six, suit: .spades)
+        switch Rules.resolve(card: offSuitSix, declaration: .plain, in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.newTally, 26)
+            XCTAssertEqual(
+                effect.locksSuit, .spades,
+                "The lock should follow the card that beat it"
+            )
+        case .failure(let reason):
+            XCTFail("A six on a six should be legal: \(reason.explanation)")
+        }
+    }
+
+    func testANonMatchingOffSuitCardIsStillBlocked() {
+        let state = board(top: Card(id: 1, rank: .six, suit: .hearts), lock: .hearts)
+        let sevenOfSpades = Card(id: 2, rank: .seven, suit: .spades)
+        switch Rules.resolve(card: sevenOfSpades, declaration: .plain, in: state) {
+        case .success:
+            XCTFail("A seven on a six under a hearts lock has no business being legal")
+        case .failure(let reason):
+            XCTAssertEqual(reason, .suitLocked(.hearts))
+        }
+    }
+
+    /// Following the suit is still the ordinary way through, and doesn't move
+    /// the lock anywhere.
+    func testFollowingTheSuitLeavesTheLockWhereItIs() {
+        let state = board(top: Card(id: 1, rank: .six, suit: .hearts), lock: .hearts)
+        let onSuit = Card(id: 2, rank: .three, suit: .hearts)
+        switch Rules.resolve(card: onSuit, declaration: .plain, in: state) {
+        case .success(let effect):
+            XCTAssertNil(effect.locksSuit, "Following doesn't re-point the lock")
+        case .failure(let reason):
+            XCTFail(reason.explanation)
+        }
+    }
+
+    /// An 8 names its own suit, and that beats the automatic move — otherwise
+    /// playing an 8 to escape a lock would rob you of the choice the 8 is for.
+    func testAnEightNamesItsOwnSuitRatherThanInheritingYours() {
+        let state = board(top: Card(id: 1, rank: .eight, suit: .hearts), lock: .hearts, asEight: true)
+        let eightOfSpades = Card(id: 2, rank: .eight, suit: .spades)
+        switch Rules.resolve(card: eightOfSpades, declaration: .lock(.diamonds), in: state) {
+        case .success(let effect):
+            XCTAssertEqual(effect.locksSuit, .diamonds, "The 8's own choice wins")
+        case .failure(let reason):
+            XCTFail(reason.explanation)
+        }
+    }
+
+    /// A Queen played as an 8 counts as an 8 on the table, so the next player
+    /// can answer her with an 8 of any suit.
+    func testAQueenPlayedAsAnEightCanBeAnsweredByAnyEight() {
+        var state = board(top: Card(id: 1, rank: .queen, suit: .hearts), lock: .diamonds, asEight: true)
+        state.tally = 20
+        let eightOfClubs = Card(id: 2, rank: .eight, suit: .clubs)
+        switch Rules.resolve(card: eightOfClubs, declaration: .lockNothing, in: state) {
+        case .success(let effect):
+            XCTAssertTrue(effect.liftsSuitLock)
+        case .failure(let reason):
+            XCTFail("She's an 8 on the table: \(reason.explanation)")
+        }
+    }
+
+    /// And a rank match still has to obey the ceiling — beating the lock is not
+    /// a licence to bust.
+    func testARankMatchStillCannotBustTheTally() {
+        let state = board(top: Card(id: 1, rank: .six, suit: .hearts), lock: .hearts, tally: 95)
+        let offSuitSix = Card(id: 2, rank: .six, suit: .spades)
+        switch Rules.resolve(card: offSuitSix, declaration: .plain, in: state) {
+        case .success: XCTFail("95 + 6 is over the top")
+        case .failure(let reason): XCTAssertEqual(reason, .wouldExceed99(resulting: 101))
+        }
+    }
+
+    /// The refusal explanation has to agree with the resolver, or the table says
+    /// one thing and the rules do another.
+    func testTheExplanationAgreesWithTheRule() {
+        let state = board(top: Card(id: 1, rank: .six, suit: .hearts), lock: .hearts)
+        XCTAssertNil(
+            Rules.blockingReason(for: Card(id: 2, rank: .six, suit: .spades), in: state),
+            "A matching rank isn't blocked, so nothing should explain it as blocked"
+        )
+        XCTAssertEqual(
+            Rules.blockingReason(for: Card(id: 3, rank: .seven, suit: .spades), in: state),
+            .suitLocked(.hearts)
+        )
+    }
+}
+
+// MARK: - Nobody draws on somebody else's turn
+
+/// Reported from a pass-and-play game: at the end of Ken's turn his screen
+/// announced that Elaine had drawn a queen, before Elaine had taken the device.
+///
+/// Turn order advances as part of the *previous* player's action, so a top-up
+/// there drew cards for the incoming player while the outgoing one was still
+/// holding the phone. Every hand is brought to its cap once, at the deal.
+final class TopUpHappensAtTheDealTests: XCTestCase {
+
+    func testEveryHandIsAtItsCapOnceTheWellsAreBuried() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 4, seed: 5150
+        )
+        // Dealt four, banking two, so two in hand — below the cap of three.
+        engine._finishWellSelectionForTesting()
+
+        for player in engine.state.players {
+            XCTAssertGreaterThanOrEqual(
+                player.hand.count, min(Rules.sustainingHandCap, player.handCap),
+                "\(player.id) opened below the cap"
+            )
+        }
+    }
+
+    /// The actual complaint: advancing the turn must not draw for anybody.
+    func testAdvancingTheTurnDrawsNoCards() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 7, seed: 909
+        )
+        engine._finishWellSelectionForTesting()
+
+        let deckBefore = engine.state.drawPile.count
+        let leader = engine.state.currentPlayer.id
+        let events = try engine.skip(by: leader)
+
+        XCTAssertFalse(
+            events.contains { if case .drewCards = $0 { return true }; return false },
+            "Passing the turn drew cards for somebody: \(events)"
+        )
+        XCTAssertEqual(
+            engine.state.drawPile.count, deckBefore,
+            "The deck should be untouched by a turn change"
+        )
+    }
+
+    /// And so queens can't turn poisonous during a turn that isn't yours.
+    func testQueensCannotBePoisonedByAnotherPlayersTurnEnding() throws {
+        for seed in UInt32(1)...120 {
+            let engine = try GameEngine(
+                seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+                dealerIndex: 2, cardsDealt: 7, seed: seed
+            )
+            engine._finishWellSelectionForTesting()
+            guard !engine.state.queensArePoisonous else { continue }
+
+            let leader = engine.state.currentPlayer.id
+            let events = try engine.skip(by: leader)
+            XCTAssertFalse(
+                events.contains { if case .queensBecamePoisonous = $0 { return true }; return false },
+                "Seed \(seed): passing the turn poisoned the queens"
+            )
+        }
+    }
+}
