@@ -52,6 +52,8 @@ final class GameViewModel: ObservableObject {
     /// True for the length of a well shuffle, so the cards can animate and a
     /// second shake can't interrupt the first.
     @Published private(set) var isShufflingWell = false
+    /// A Snackoo in progress, shown to the whole table.
+    @Published var snackooMoment: SnackooMoment?
     /// The achievement toast currently on screen.
     @Published var achievementToast: Achievement?
     /// True while cards are being dealt at the start of a game.
@@ -106,6 +108,9 @@ final class GameViewModel: ObservableObject {
         /// you're two cards richer — the only unambiguously good thing that
         /// happens in a game of 99, so it gets its own beat.
         case survived(card: Card, playerID: String)
+        /// The other well card, turned over after an unplayable one has ended
+        /// somebody's game. Shown before the loss is announced.
+        case whatYouMissed(card: Card, playerID: String)
     }
 
     struct PendingChoice: Identifiable, Equatable {
@@ -136,6 +141,13 @@ final class GameViewModel: ObservableObject {
         var itWasYou: Bool
         var yourExiledCount: Int
         var yourNewCap: Int?
+    }
+
+    struct SnackooMoment: Identifiable, Equatable {
+        let id = UUID()
+        var headline: String
+        var detail: String
+        var isYours: Bool
     }
 
     struct Rejection: Identifiable, Equatable {
@@ -325,9 +337,9 @@ final class GameViewModel: ObservableObject {
 
         Task {
             await submit(.shuffleWell, by: playerID) {}
-            // Let the animation land before another shake is accepted, or a
-            // vigorous shake queues a dozen of them.
-            try? await Task.sleep(for: .milliseconds(420))
+            // Long enough for the four-beat choreography to land. A shorter
+            // window let a vigorous shake cut its own animation in half.
+            try? await Task.sleep(for: .milliseconds(640))
             isShufflingWell = false
         }
     }
@@ -461,11 +473,14 @@ final class GameViewModel: ObservableObject {
             reject(card, message: "Queens can't be run together — each one has to name what it is.")
             return
         }
-        // If even a pair would bust, say so rather than opening a builder in
-        // which every combination is refused.
+        // No legal run of this rank at all — say *why*, in the engine's words.
+        // This used to assert the tally was the problem, which told a player
+        // holding two off-suit sixes under a lock that they'd bust.
         guard Rules.playableSetRanks(for: context.players[context.currentPlayerIndex], in: context)
             .contains(card.rank) else {
-            reject(card, message: "Two \(card.rank.plural) would push the tally past 99.")
+            let pair = Array(matching.prefix(2))
+            reject(card, message: Rules.blockingReasonForSet(pair, in: context)?.explanation
+                ?? "You can't run those together right now.")
             return
         }
 
@@ -660,11 +675,11 @@ final class GameViewModel: ObservableObject {
     func declareSnackoo(_ kind: GameEvent.SnackooKind) {
         guard let actor = viewingPlayerID else { return }
         Task {
-            await submit(.snackoo(kind: PlayerAction.SnackooKind(kind)), by: actor) {
-                Haptics.shared.play(.snackoo)
-                SoundEngine.shared.play(.snackoo)
-                self.announce(headline: "Snackoo!", detail: self.snackooDetail(kind), tone: .good)
-            }
+            // Nothing to celebrate here: the event comes straight back through
+            // the log and the timeline shows it to everyone, this player
+            // included. Announcing locally as well played the sound twice and
+            // put a banner behind the confetti.
+            await submit(.snackoo(kind: PlayerAction.SnackooKind(kind)), by: actor) {}
         }
     }
 
@@ -868,6 +883,13 @@ final class GameViewModel: ObservableObject {
             SoundEngine.shared.play(.wellSurvive, volume: 0.9)
             try? await Task.sleep(for: .milliseconds(1_700))
             withAnimation(Motion.drama) { wellReveal = .idle }
+
+            // And then *play it*. A well card that survives is still a card
+            // being played: it moves the tally and, if it's an Ace, an 8 or a
+            // Queen, its owner still has to say what it is. An earlier version
+            // of this celebration returned here, which left the card revealed,
+            // uncommitted and unasked-about — the turn simply stopped.
+            await resolvePendingWellCard(for: playerID)
             return
         }
 
@@ -878,19 +900,34 @@ final class GameViewModel: ObservableObject {
             return
         }
         withAnimation(Motion.drama) { wellReveal = .idle }
+        await driveAITurns()
+    }
 
-        if playable, let pending = view?.pendingWell, pending.playerID == playerID, let view {
-            let declarations = Rules.legalDeclarations(for: pending.card, in: view.rulesContext())
-            if declarations.count == 1 {
-                await commitPlay(card: pending.card, declaration: declarations[0], fromWell: true)
-            } else {
-                withAnimation(Motion.panel) {
-                    pendingChoice = PendingChoice(card: pending.card, options: declarations, isFromWell: true)
-                }
-            }
+    /// Play the well card that's face up, asking how if it needs an answer.
+    ///
+    /// Separated out because it is the *point* of turning a well card over, and
+    /// it was previously buried at the end of a long function behind three
+    /// early returns — one of which was later added in front of it.
+    private func resolvePendingWellCard(for playerID: String) async {
+        guard let pending = view?.pendingWell, pending.playerID == playerID, let view else {
+            await driveAITurns()
             return
         }
-        await driveAITurns()
+        let declarations = Rules.legalDeclarations(for: pending.card, in: view.rulesContext())
+        if declarations.count == 1 {
+            await commitPlay(card: pending.card, declaration: declarations[0], fromWell: true)
+        } else if declarations.isEmpty {
+            // Shouldn't happen — it was judged playable a moment ago — but
+            // stalling silently would be worse than saying so.
+            announce(headline: "Stuck", detail: "That card can't be played after all.", tone: .bad)
+            await driveAITurns()
+        } else {
+            withAnimation(Motion.panel) {
+                pendingChoice = PendingChoice(
+                    card: pending.card, options: declarations, isFromWell: true
+                )
+            }
+        }
     }
 
     // MARK: - AI
@@ -928,6 +965,47 @@ final class GameViewModel: ObservableObject {
     // MARK: - Event choreography
 
     #if DEBUG
+    /// Wait until the table has stopped moving on its own.
+    ///
+    /// A fixed sleep isn't enough: the AI turn loop started by `begin()` runs
+    /// for as long as it runs, and under a loaded machine that is longer than
+    /// any number you'd want to hardcode. A position forced while it's still
+    /// going simply gets played over.
+    func _settleForTesting(timeout: Duration = .seconds(20)) async {
+        let deadline = ContinuousClock.now + timeout
+        var stableTicks = 0
+        var previous = ""
+        while ContinuousClock.now < deadline {
+            let snapshot = "\(view?.currentPlayerID ?? "")|\(view?.tally ?? -1)|\(coordinator.actionLog.count)"
+            let quiet = snapshot == previous
+                && thinkingPlayerID == nil
+                && wellReveal == .idle
+                && !isDealing
+            stableTicks = quiet ? stableTicks + 1 : 0
+            if stableTicks >= 4 { return }
+            previous = snapshot
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+    }
+
+    var _lastErrorForTesting: String? { coordinator.lastError }
+    var _availableActionsForTesting: [PlayerAction] {
+        guard let id = viewingPlayerID else { return [] }
+        return coordinator.availableActions(for: id)
+    }
+
+    /// Put a known well and hand on the table, at a known tally.
+    func _forceWellForTesting(_ well: [Card], hand: [Card], tally: Int) {
+        coordinator._forceWellForTesting(well, hand: hand, tally: tally)
+        syncFromCoordinator()
+    }
+
+    /// Drive the real well flow, celebration and all, and wait for it to settle.
+    func _drawWellForTesting(slot: Int) async {
+        guard let actor = viewingPlayerID else { return }
+        await runWell(for: actor, slot: slot)
+    }
+
     /// Put a known hand on the table. Reproducing a reported hand by shuffling
     /// for it is a waiting game; this states it.
     func _forceHandForTesting(_ hand: [Card], tally: Int) {
@@ -1041,11 +1119,22 @@ final class GameViewModel: ObservableObject {
                 }
 
             case .snackoo(let by, let kind):
-                if by != viewingPlayerID {
-                    SoundEngine.shared.play(.snackoo, volume: 0.7)
-                    announce(headline: "\(name(of: by)): Snackoo!", detail: snackooDetail(kind), tone: .neutral)
-                    try? await Task.sleep(for: .milliseconds(500))
+                // Everyone's, not just yours. A Snackoo can happen out of turn,
+                // to anyone, and it's the one move in 99 that's purely good —
+                // the table should get to see it rather than read about it in a
+                // banner that's already sliding away.
+                let mine = by == viewingPlayerID
+                SoundEngine.shared.play(.snackoo, volume: mine ? 1.0 : 0.8)
+                Haptics.shared.play(.snackoo)
+                withAnimation(Motion.drama) {
+                    snackooMoment = SnackooMoment(
+                        headline: mine ? "SNACKOO!" : "\(name(of: by)): Snackoo!",
+                        detail: snackooDetail(kind),
+                        isYours: mine
+                    )
                 }
+                try? await Task.sleep(for: .milliseconds(2_000))
+                withAnimation(Motion.drama) { snackooMoment = nil }
 
             case .drawPileReshuffled:
                 SoundEngine.shared.play(.shuffle, volume: 0.6)
@@ -1090,7 +1179,21 @@ final class GameViewModel: ObservableObject {
                 // follows immediately and says what it cost them.
                 withAnimation(Motion.drama) { wellReveal = .idle }
 
-            case .playerEliminated(let id, let reason, _):
+            case .playerEliminated(let id, let reason, _, let unspentWell):
+                // Turn the card they didn't pick face up first. At a table this
+                // is automatic — you show the other one — and "what was the one
+                // I didn't take?" is the first thing anybody asks. Skipping it
+                // made the loss land as an announcement rather than a reveal.
+                if case .unplayableWellCard = reason, let missed = unspentWell.first {
+                    withAnimation(Motion.drama) {
+                        wellReveal = .whatYouMissed(card: missed, playerID: id)
+                    }
+                    Haptics.shared.play(.cardLift)
+                    SoundEngine.shared.play(.cardFlick, volume: 0.7)
+                    try? await Task.sleep(for: .milliseconds(1_900))
+                    withAnimation(Motion.drama) { wellReveal = .idle }
+                }
+
                 if id == viewingPlayerID {
                     Haptics.shared.play(.eliminated)
                     SoundEngine.shared.play(.eliminated)

@@ -190,7 +190,7 @@ final class Records: ObservableObject {
                 if playable { stats.wellsSurvived += 1 } else { stats.wellsFatal += 1 }
             case .queenPoisoned(_, let owner, _) where owner == humanID:
                 stats.queensPoisoned += 1
-            case .playerEliminated(let id, _, _) where id != humanID:
+            case .playerEliminated(let id, _, _, _) where id != humanID:
                 stats.opponentsEliminated += 1
             default:
                 break

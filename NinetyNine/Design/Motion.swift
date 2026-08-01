@@ -19,6 +19,10 @@ enum Motion {
 
     /// A card lifting under the finger. Fast and crisp; any lag here feels broken.
     static let cardLift = Animation.spring(duration: 0.22, bounce: 0.30)
+    /// One beat of the well shuffle. Quick and slightly springy — a shuffle is
+    /// a flick of the wrist, not a considered move, and at a slower duration the
+    /// four beats read as four separate animations rather than one gesture.
+    static let shuffleStep = Animation.spring(duration: 0.19, bounce: 0.42)
 
     /// The hand fan re-flowing after a card leaves.
     static let handReflow = Animation.spring(duration: 0.5, bounce: 0.14)

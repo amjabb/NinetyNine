@@ -624,6 +624,20 @@ final class GameEngine {
         case .threeQueens:
             guard Rules.canSnackooPoison(state.players[seat]) else { throw GameError.snackooNotAvailable }
             state.players[seat].poisonPile.removeFirst(3)
+
+            // Clearing the queens gives back the capacity they cost. Without
+            // this the reward is incoherent: three cards drawn into a hand that
+            // can only hold two, immediately over its own limit and stuck there
+            // for the rest of the game. The cap is a weight the queens put on
+            // you, and this is putting it down.
+            let restored = min(
+                Rules.sustainingHandCap,
+                state.players[seat].handCap + Rules.snackooSize
+            )
+            if restored != state.players[seat].handCap {
+                state.players[seat].handCap = restored
+                events.append(.handCapRestored(to: restored, for: playerID))
+            }
             note("\(state.players[seat].name) declares Snackoo — three poisoned queens cleared.")
 
         case .threeOfAKind(let rank):
@@ -667,6 +681,10 @@ final class GameEngine {
         }
         note("\(state.players[seat].name) is out — \(reason.explanation)")
 
+        // Captured before the well is emptied: the UI turns the unspent card
+        // over so the player can see what they didn't pick.
+        let unspentWell = state.players[seat].well
+
         // Their cards go back into circulation.
         let returned = state.players[seat].hand + state.players[seat].well + state.players[seat].poisonPile
         state.drawPile = random.shuffled(state.drawPile + returned)
@@ -683,7 +701,9 @@ final class GameEngine {
             note("The suit lock lifts.")
         }
 
-        events.append(.playerEliminated(id: state.players[seat].id, reason: reason, rank: rank))
+        events.append(.playerEliminated(
+            id: state.players[seat].id, reason: reason, rank: rank, unspentWell: unspentWell
+        ))
 
         if state.activePlayers.count == 1, let winner = state.activePlayers.first {
             state.winnerID = winner.id

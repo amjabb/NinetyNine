@@ -46,15 +46,23 @@ struct PlayerView: Codable, Sendable {
     /// Your own hand, in full. This is the only place real cards appear for a
     /// living player.
     ///
-    /// **Empty while you're choosing your well.** The deal is face down until
-    /// the well is banked — see `wellChoiceCount`. Redacting it here rather than
-    /// hiding it in the view is the point of this type: a UI that merely
-    /// declined to draw the faces would still have them in memory, and in an
-    /// online match would have shipped them over the wire.
+    /// **Empty until you have banked your well.** The deal is face down from
+    /// the moment it lands — not merely while it's your turn to choose.
+    ///
+    /// That distinction was a leak. Wells are banked in seat order, so on a
+    /// rematch, where the dealer changes, another player often banks first — and
+    /// this was redacted only for the *current* chooser, leaving your real cards
+    /// on screen while you waited your turn. Blind means blind from the deal.
+    ///
+    /// Redacting here rather than in the view is the point of this type: a UI
+    /// that merely declined to draw the faces would still have them in memory,
+    /// and in an online match would have shipped them over the wire.
     var yourHand: [Card]
-    /// How many face-down cards you're choosing your well from. Zero unless it's
-    /// your turn to choose.
+    /// How many face-down cards you're choosing your well from. Zero once you
+    /// have banked.
     var wellChoiceCount: Int
+    /// True while you still owe a well, whether or not it's your turn to bank.
+    var youOweAWell: Bool
     /// Your well cards are face down even to you — a count, not the cards.
     /// Revealing one early would defeat the entire point of the well.
     var yourWellCount: Int
@@ -137,9 +145,11 @@ extension GameState {
         return PlayerView(
             youID: playerID,
             yourName: you?.name ?? "You",
-            // Hidden from its owner during the blind pick — a count, not cards.
-            yourHand: wellChooserID == playerID ? [] : (you?.hand ?? []),
+            // Hidden from its owner for the whole of the blind pick — a count,
+            // not cards — and from the deal, not merely from their turn.
+            yourHand: wellSelectionQueue.contains(playerID) ? [] : (you?.hand ?? []),
             wellChoiceCount: wellChooserID == playerID ? (you?.hand.count ?? 0) : 0,
+            youOweAWell: wellSelectionQueue.contains(playerID),
             yourWellCount: you?.well.count ?? 0,
             yourPoisonPile: you?.poisonPile ?? [],
             yourHandCap: you?.handCap ?? cardsDealt,

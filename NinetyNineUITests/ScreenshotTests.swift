@@ -314,9 +314,18 @@ final class ScreenshotTests: XCTestCase {
                 return true
             }
         }
-        for button in app.buttons.allElementsBoundByIndex {
+        // Scoped to the sheet: `app.buttons` also holds the hand behind the
+        // scrim, and tapping a card there does nothing while leaving the sheet
+        // up — a loop with no way out.
+        let sheet = app.otherElements["declaration-sheet"]
+        let candidates = sheet.exists
+            ? sheet.buttons.allElementsBoundByIndex
+            : app.buttons.allElementsBoundByIndex.filter {
+                !$0.identifier.hasPrefix("hand-card-")
+            }
+        for button in candidates {
             guard button.exists, button.isHittable else { continue }
-            if button.label == "Back" || button.label == "Pause" { continue }
+            if ["Back", "Pause", "Pick a different card"].contains(button.label) { continue }
             button.tap()
             return true
         }

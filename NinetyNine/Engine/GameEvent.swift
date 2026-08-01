@@ -38,6 +38,8 @@ enum GameEvent: Equatable, Sendable {
     /// once, and it needs to land as an event, not a line of text.
     case queensBecamePoisonous(card: Card, trigger: String)
     case queenPoisoned(card: Card, owner: String, newHandCap: Int)
+    /// Three poisoned queens were cleared, so the capacity they cost comes back.
+    case handCapRestored(to: Int, for: String)
 
     // Snackoo
     case snackoo(by: String, kind: SnackooKind)
@@ -56,7 +58,11 @@ enum GameEvent: Equatable, Sendable {
     case extraPlayOwed(by: String)
 
     // Endgame
-    case playerEliminated(id: String, reason: EliminationReason, rank: Int)
+    /// - Parameter unspentWell: whatever was still buried when they went out.
+    ///   Shown to the table before the loss is announced — at a real table you
+    ///   turn the other one over, and "what was the one I didn't pick?" is the
+    ///   first thing anybody asks.
+    case playerEliminated(id: String, reason: EliminationReason, rank: Int, unspentWell: [Card])
     case gameWon(by: String)
 
     enum SnackooKind: Equatable, Sendable {

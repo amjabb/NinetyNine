@@ -28,6 +28,9 @@ struct WellRevealOverlay: View {
     var onShuffle: (() -> Void)?
 
     @Environment(\.motion) private var motion
+    /// Which beat of the shuffle choreography we're on: 0 settled, 1 first
+    /// crossing, 2 the crossing back, 3 the overshoot before it lands.
+    @State private var shufflePass = 0
     @State private var shuffleOffset: CGFloat = 0
     @State private var burstScale: CGFloat = 0.2
     @State private var burstOpacity: Double = 0
@@ -84,6 +87,7 @@ struct WellRevealOverlay: View {
         case .choosing: return "Pick one. You won't know until you turn it."
         case .rescue: return "It won't play — but it's your third."
         case .survived: return "It plays."
+        case .whatYouMissed: return "This is what you left down there."
         default: return "One card. Everything rides on it."
         }
     }
@@ -106,16 +110,16 @@ struct WellRevealOverlay: View {
                     } label: {
                         CardBackView(isHighlighted: true)
                             .frame(width: slots > 1 ? 132 : 156)
-                            .cardShadow(lift: isShuffling ? 26 : 18)
+                            .cardShadow(lift: 18 + shuffleLift(slot))
                             .rotationEffect(.degrees(slots > 1 ? (slot == 0 ? -5 : 5) : 0))
-                            // They swap places, which is the whole point: after
-                            // this you cannot say which one you were looking at.
-                            .offset(
-                                x: isShuffling ? (slot == 0 ? 78 : -78) : 0,
-                                y: isShuffling ? (slot == 0 ? -16 : 16) : 0
-                            )
-                            .rotationEffect(.degrees(isShuffling ? (slot == 0 ? 14 : -14) : 0))
-                            .zIndex(slot == 0 ? 1 : 0)
+                            // They cross over each other rather than sliding
+                            // sideways: one card passes in front and the other
+                            // dips behind, twice, so it reads as a shuffle
+                            // instead of two cards politely trading seats.
+                            .offset(x: shuffleX(slot), y: shuffleY(slot))
+                            .rotationEffect(.degrees(shuffleTilt(slot)))
+                            .scaleEffect(shuffleScale(slot))
+                            .zIndex(shuffleZ(slot))
                     }
                     .buttonStyle(.plain)
                     .disabled(isShuffling)
@@ -125,7 +129,11 @@ struct WellRevealOverlay: View {
                     .accessibilityHint("Turn this one over")
                 }
             }
-            .animation(motion.animation(Motion.cardLift), value: isShuffling)
+            .animation(motion.animation(Motion.shuffleStep), value: shufflePass)
+            .onChange(of: isShuffling) { _, shuffling in
+                guard shuffling else { return }
+                Task { await runShuffleChoreography() }
+            }
 
         case .rolling:
             // Two face-down cards trading places — you can see there's a choice
@@ -164,6 +172,11 @@ struct WellRevealOverlay: View {
         case .survived(let card, _):
             FlippableCard(card: card, isFaceUp: true, isPlayable: true)
                 .frame(width: 168)
+
+        case .whatYouMissed(let card, _):
+            FlippableCard(card: card, isFaceUp: true, isPlayable: false)
+                .frame(width: 168)
+                .saturation(0.55)
 
         case .revealed(let card, let playable, _):
             FlippableCard(card: card, isFaceUp: true, isPlayable: playable)
@@ -258,6 +271,21 @@ struct WellRevealOverlay: View {
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.ivoryDim)
 
+        case .whatYouMissed(let card, _):
+            VStack(spacing: 8) {
+                Text("THE OTHER ONE")
+                    .font(.system(size: 20, weight: .black, design: .serif))
+                    .tracking(2)
+                    .foregroundStyle(Palette.ivoryDim)
+                Text(missedDetail(card: card))
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.ivory.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+            }
+            .transition(.opacity)
+
         case .survived:
             VStack(spacing: 12) {
                 Text(isHuman ? "THE WELL HOLDS" : "\(playerName) SURVIVES")
@@ -337,6 +365,90 @@ struct WellRevealOverlay: View {
         case .idle:
             EmptyView()
         }
+    }
+
+    // MARK: Shuffle choreography
+
+    /// Four beats rather than one: across, back, a small overshoot, settle.
+    /// A single there-and-back reads as a swap — which is a different gesture
+    /// and a less convincing one.
+    private func runShuffleChoreography() async {
+        let beats: [(pass: Int, hold: Duration)] = [
+            (1, .milliseconds(190)),
+            (2, .milliseconds(190)),
+            (3, .milliseconds(120)),
+            (0, .milliseconds(0)),
+        ]
+        for beat in beats {
+            shufflePass = beat.pass
+            if beat.hold > .zero { try? await Task.sleep(for: beat.hold) }
+        }
+    }
+
+    /// Horizontal travel. The two cards mirror each other, and the direction
+    /// flips between passes so they genuinely cross twice.
+    private func shuffleX(_ slot: Int) -> CGFloat {
+        let leading = slot == 0
+        switch shufflePass {
+        case 1: return leading ? 84 : -84
+        case 2: return leading ? -84 : 84
+        case 3: return leading ? 10 : -10
+        default: return 0
+        }
+    }
+
+    /// One card lifts over the top while the other dips under it, so the paths
+    /// don't simply pass through each other.
+    private func shuffleY(_ slot: Int) -> CGFloat {
+        let leading = slot == 0
+        switch shufflePass {
+        case 1: return leading ? -34 : 20
+        case 2: return leading ? 20 : -34
+        case 3: return leading ? -6 : 4
+        default: return 0
+        }
+    }
+
+    private func shuffleTilt(_ slot: Int) -> Double {
+        let leading = slot == 0
+        switch shufflePass {
+        case 1: return leading ? 16 : -9
+        case 2: return leading ? -9 : 16
+        case 3: return leading ? 3 : -2
+        default: return 0
+        }
+    }
+
+    /// The card passing in front grows very slightly — enough to read as nearer
+    /// without looking like a zoom.
+    private func shuffleScale(_ slot: Int) -> CGFloat {
+        let leading = slot == 0
+        switch shufflePass {
+        case 1: return leading ? 1.06 : 0.97
+        case 2: return leading ? 0.97 : 1.06
+        default: return 1
+        }
+    }
+
+    private func shuffleLift(_ slot: Int) -> CGFloat {
+        shufflePass == 0 ? 0 : (isOverlapping(slot) ? 14 : -4)
+    }
+
+    /// Whichever card is in front this pass.
+    private func isOverlapping(_ slot: Int) -> Bool {
+        shufflePass == 2 ? slot == 1 : slot == 0
+    }
+
+    private func shuffleZ(_ slot: Int) -> Double {
+        isOverlapping(slot) ? 1 : 0
+    }
+
+    /// What the unspent well card would have done — the question everybody asks
+    /// the moment somebody goes out on a well.
+    private func missedDetail(card: Card) -> String {
+        isHuman
+            ? "Your other well card was the \(card.accessibleName)."
+            : "\(playerName)'s other well card was the \(card.accessibleName)."
     }
 
     /// Backing out of the well without turning anything over.

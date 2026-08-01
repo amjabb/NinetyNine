@@ -61,6 +61,12 @@ struct DeclarationSheet: View {
                 .ignoresSafeArea()
                 .onTapGesture(perform: onCancel)
         )
+        // `.contain` keeps every option's own identifier; the container exists so
+        // that anything hunting for "the buttons on this sheet" can scope the
+        // search to it rather than to the whole app — the hand is still in the
+        // hierarchy behind the scrim.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("declaration-sheet")
         .transition(.opacity)
     }
 

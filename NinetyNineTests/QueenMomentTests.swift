@@ -241,3 +241,97 @@ final class WatchingTheWellTests: XCTestCase {
         XCTAssertEqual(model.wellReveal, .idle, "The local draw has its own path")
     }
 }
+
+// MARK: - A surviving well card still has to be played
+
+/// Reported from play: "I got a queen from the well but it didn't ask me what
+/// card I wanted it to be. This worries me that well cards aren't actually
+/// being played."
+///
+/// They were right, and it was a regression: the survival celebration was added
+/// in front of the code that resolves the card, and returned before reaching it.
+/// The card was revealed, cheered, and then left face up and uncommitted — the
+/// turn simply stopped.
+///
+/// Nothing caught it because every existing well test asserted on the *engine*,
+/// where resolveWell works perfectly. The break was entirely in the order the
+/// view model does things, so that is where these look.
+@MainActor
+final class WellCardIsActuallyPlayedTests: XCTestCase {
+
+    private func tableWithWell(_ well: [Card], hand: [Card], tally: Int) async throws -> GameViewModel {
+        let model = GameViewModel.solo(
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 7,
+            playerName: "You", dealerID: nil, seed: 1
+        )
+        await model.begin()
+        var guardCount = 0
+        while model.view?.youAreChoosingYourWell == true && guardCount < 8 {
+            guardCount += 1
+            model.chooseWell(slots: [0, 1])
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        // Wait for the table to stop moving before forcing a position. The AI
+        // turn loop started by `begin()` is still running, and a state written
+        // under it gets played over — which looked exactly like the bug being
+        // tested. A fixed sleep passed alone and failed under suite load.
+        await model._settleForTesting()
+        model._forceWellForTesting(well, hand: hand, tally: tally)
+        return model
+    }
+
+    /// A Queen off the well must ask what it is, exactly as one from the hand
+    /// would. This is the reported case.
+    func testAQueenFromTheWellAsksWhatItIs() async throws {
+        let queen = Card(id: 940, rank: .queen, suit: .hearts)
+        let model = try await tableWithWell(
+            [queen, Card(id: 941, rank: .two, suit: .clubs)],
+            hand: [Card(id: 942, rank: .king, suit: .spades)],
+            tally: 95
+        )
+
+        await model._drawWellForTesting(slot: 0)
+
+        let choice = try XCTUnwrap(
+            model.pendingChoice,
+            "A Queen from the well has to be declared, like any other Queen"
+        )
+        XCTAssertEqual(choice.card.id, queen.id)
+        XCTAssertTrue(choice.isFromWell)
+        XCTAssertGreaterThan(choice.options.count, 1, "She can be many things")
+    }
+
+    /// A card with only one legal reading is played outright — no sheet, but it
+    /// must actually land.
+    func testAPlainWellCardIsPlayedWithoutAsking() async throws {
+        let three = Card(id: 950, rank: .three, suit: .clubs)
+        let model = try await tableWithWell(
+            [three, Card(id: 951, rank: .two, suit: .hearts)],
+            hand: [Card(id: 952, rank: .king, suit: .spades)],
+            tally: 90
+        )
+
+        await model._drawWellForTesting(slot: 0)
+
+        XCTAssertNil(model.pendingChoice, "Nothing to ask about a three")
+        let view = try XCTUnwrap(model.view)
+        XCTAssertNil(view.pendingWell, "It should be resolved, not left face up")
+        XCTAssertEqual(view.tally, 93, "And it should have moved the tally")
+    }
+
+    /// The failure mode that was shipping: revealed, celebrated, then nothing.
+    func testTheTurnDoesNotStallAfterSurvivingTheWell() async throws {
+        let four = Card(id: 960, rank: .four, suit: .spades)
+        let model = try await tableWithWell(
+            [four, Card(id: 961, rank: .two, suit: .hearts)],
+            hand: [Card(id: 962, rank: .king, suit: .spades)],
+            tally: 96
+        )
+
+        await model._drawWellForTesting(slot: 0)
+
+        let view = try XCTUnwrap(model.view)
+        XCTAssertNil(view.pendingWell, "A survived well card must not be left dangling")
+        XCTAssertEqual(model.wellReveal, .idle, "And the overlay must hand the table back")
+    }
+}

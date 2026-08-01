@@ -149,7 +149,11 @@ enum Rules {
     /// removes cards, it only tops up.
     static let sustainingHandCap = 5
 
-    /// A poisoned queen permanently costs one card of capacity. Three queens
+    /// How many of a kind make a Snackoo.
+    static let snackooSize = 3
+
+    /// A poisoned queen costs one card of capacity while it sits in the poison
+    /// pile. Clearing three of them with a Snackoo gives that capacity back. Three queens
     /// down means a hand of two — the floor only exists so a player can never be
     /// left unable to hold a card at all.
     static let poisonedHandCapFloor = 1
@@ -435,25 +439,70 @@ enum Rules {
         }
     }
 
+    /// Whether the suit lock blocks this card outright, judged on its printed
+    /// rank alone — which is all the "why can't I play this" paths know before
+    /// a declaration has been picked.
+    ///
+    /// One definition rather than three: `resolve` decides legality, and both
+    /// explanation paths used to re-state the rule themselves. They had already
+    /// drifted — neither knew about the 8-on-8 exception, so an 8 that could
+    /// legally take over a lock was reported as blocked by it.
+    static func lockBlocking(_ card: Card, in state: GameState) -> Suit? {
+        guard let lock = state.suitLock else { return nil }
+        if card.rank == .queen { return nil }
+        if card.rank == .eight && state.topPlayedAsEight { return nil }
+        return card.suit == lock.suit ? nil : lock.suit
+    }
+
+    /// Why a run of these cards can't be played, in the player's words.
+    ///
+    /// Tries the declarations the rank could take and reports what the engine
+    /// actually objected to. The UI used to guess — it assumed any refusal meant
+    /// the tally, and told a player holding two off-suit sixes under a lock that
+    /// they'd bust, which is both wrong and unhelpful.
+    static func blockingReasonForSet(_ cards: [Card], in state: GameState) -> IllegalReason? {
+        guard let first = cards.first else { return nil }
+        guard first.rank != .queen else {
+            return .missingDeclaration("Queens can't be run together.")
+        }
+        // Checked first, and on every card in the run: a lock holds whatever
+        // declaration you pick, whereas a bust depends on the choice — and
+        // `resolve` tests the tally before the suit, so leaving this to the
+        // resolver reported an arithmetic complaint about a card that was never
+        // going to be legal anyway.
+        for card in cards {
+            if let suit = lockBlocking(card, in: state) { return .suitLocked(suit) }
+        }
+        var reason: IllegalReason?
+        for declaration in candidateDeclarations(for: first, in: state) {
+            switch resolveSet(cards: cards, declaration: declaration, in: state) {
+            case .success: return nil
+            case .failure(let failure): reason = reason ?? failure
+            }
+        }
+        return reason
+    }
+
     /// Every legal way to play this set together.
     static func legalDeclarations(forSet cards: [Card], in state: GameState) -> [Declaration] {
         guard let first = cards.first, first.rank != .queen else { return [] }
-        var results: [Declaration] = []
-        func consider(_ declaration: Declaration) {
+        return candidateDeclarations(for: first, in: state).filter { declaration in
             if case .success = resolveSet(cards: cards, declaration: declaration, in: state) {
-                results.append(declaration)
+                return true
             }
+            return false
         }
-        switch first.rank {
-        case .ace:
-            for value in AceValue.allCases { consider(.ace(value)) }
-        case .eight:
-            for suit in Suit.allCases { consider(.lock(suit)) }
-            consider(.lockNothing)
-        default:
-            consider(.plain)
+    }
+
+    /// Every declaration a run of this rank could be played under, legal or not.
+    /// Shared by the "what can I do" and "why can't I" paths so the two can't
+    /// drift apart.
+    private static func candidateDeclarations(for card: Card, in state: GameState) -> [Declaration] {
+        switch card.rank {
+        case .ace: return AceValue.allCases.map { .ace($0) }
+        case .eight: return Suit.allCases.map { .lock($0) } + [.lockNothing]
+        default: return [.plain]
         }
-        return results
     }
 
     static func isPlayable(_ card: Card, in state: GameState) -> Bool {
@@ -472,9 +521,7 @@ enum Rules {
     /// declarations (a card blocked by the suit lock reports the lock, not an
     /// arithmetic complaint about one arbitrary declaration).
     static func blockingReason(for card: Card, in state: GameState) -> IllegalReason? {
-        if let lock = state.suitLock, card.rank != .queen, card.suit != lock.suit {
-            return .suitLocked(lock.suit)
-        }
+        if let suit = lockBlocking(card, in: state) { return .suitLocked(suit) }
         var fallback: IllegalReason?
         let candidates: [Declaration]
         switch card.rank {

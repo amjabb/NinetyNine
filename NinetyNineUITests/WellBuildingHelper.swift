@@ -137,8 +137,18 @@ extension XCUIApplication {
         for prefix in answers where tapButton(labelPrefix: prefix) { return true }
 
         // A Queen's rank grid: anything but the ways out.
+        //
+        // Scoped to the sheet. `app.buttons` also contains the hand sitting
+        // behind the scrim, and this used to tap a card there — which does
+        // nothing, leaves the sheet up, and loops until the budget runs out.
         let forbidden: Set<String> = ["Back", "Pause", "Pick a different card"]
-        for button in buttons.allElementsBoundByIndex {
+        let sheet = otherElements["declaration-sheet"]
+        let candidates = sheet.exists
+            ? sheet.buttons.allElementsBoundByIndex
+            : buttons.allElementsBoundByIndex.filter {
+                !$0.identifier.hasPrefix("hand-card-")
+            }
+        for button in candidates {
             guard button.exists, button.isHittable, !forbidden.contains(button.label) else { continue }
             button.tap()
             // Picking a rank can open a second step (an 8 needs a suit, an Ace a

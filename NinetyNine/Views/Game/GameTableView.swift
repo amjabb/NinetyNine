@@ -382,6 +382,15 @@ struct GameTableView: View {
             .onShake(isEnabled: wellIsHuman) { viewModel.shuffleWell() }
         }
 
+        if let moment = viewModel.snackooMoment {
+            SnackooCelebration(
+                headline: moment.headline,
+                detail: moment.detail,
+                isYours: moment.isYours
+            )
+            .transition(.opacity)
+        }
+
         if let poisoning = viewModel.queenPoisoning {
             QueenPoisonOverlay(
                 card: poisoning.card,
@@ -469,7 +478,7 @@ struct GameTableView: View {
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
         case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
-             .rescue(_, _, let id), .survived(_, let id):
+             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
             return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
             return ""
@@ -479,7 +488,7 @@ struct GameTableView: View {
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
         case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
-             .rescue(_, _, let id), .survived(_, let id):
+             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
             return id == viewModel.viewingPlayerID
         case .idle:
             return false

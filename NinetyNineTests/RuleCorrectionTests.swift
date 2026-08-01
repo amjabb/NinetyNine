@@ -873,3 +873,146 @@ final class QueenAsEightDeclarationTests: XCTestCase {
         XCTAssertEqual(Set(tallies).count, 1, "All the same tally — nothing to sort on")
     }
 }
+
+// MARK: - Reported from play on 1.4
+
+/// Clearing three poisoned queens gives back the capacity they cost.
+///
+/// Reported: "I snackoo'd three poisoned queens and got three cards but my hand
+/// is not generating back to 5." Without this the reward is incoherent — three
+/// cards drawn into a hand that can only hold two, over its own limit the moment
+/// it arrives and stuck there for the rest of the game.
+final class QueenSnackooRestoresCapTests: XCTestCase {
+
+    private func engineWithPoisonedQueens(_ count: Int) throws -> (GameEngine, String) {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 7, seed: 9090
+        )
+        engine._finishWellSelectionForTesting()
+
+        var state = engine.state
+        let id = state.currentPlayer.id
+        let seat = try XCTUnwrap(state.index(of: id))
+        state.queensArePoisonous = true
+        state.players[seat].poisonPile = (0..<count).map {
+            Card(id: 960 + $0, rank: .queen, suit: Suit.allCases[$0 % 4])
+        }
+        state.players[seat].handCap = max(
+            Rules.poisonedHandCapFloor, Rules.sustainingHandCap - count
+        )
+        engine._replaceStateForTesting(state)
+        return (engine, id)
+    }
+
+    func testClearingThreeQueensPutsTheCapBack() throws {
+        let (engine, id) = try engineWithPoisonedQueens(3)
+        let seat = try XCTUnwrap(engine.state.index(of: id))
+        XCTAssertEqual(engine.state.players[seat].handCap, 2, "Three queens down means two")
+
+        let events = try engine.declareSnackoo(by: id, kind: .threeQueens)
+
+        XCTAssertEqual(
+            engine.state.players[seat].handCap, Rules.sustainingHandCap,
+            "Clearing all three should hand the capacity back"
+        )
+        XCTAssertTrue(
+            events.contains(.handCapRestored(to: Rules.sustainingHandCap, for: id)),
+            "The table should be told"
+        )
+        XCTAssertTrue(engine.state.players[seat].poisonPile.isEmpty)
+    }
+
+    /// The three cards it draws have to fit in the hand it leaves you with.
+    func testTheThreeCardsDrawnFitTheRestoredCap() throws {
+        let (engine, id) = try engineWithPoisonedQueens(3)
+        let seat = try XCTUnwrap(engine.state.index(of: id))
+        var state = engine.state
+        state.players[seat].hand = [Card(id: 980, rank: .three, suit: .spades)]
+        engine._replaceStateForTesting(state)
+
+        try engine.declareSnackoo(by: id, kind: .threeQueens)
+
+        let after = try XCTUnwrap(engine.state.player(id: id))
+        XCTAssertLessThanOrEqual(
+            after.hand.count, after.handCap,
+            "A Snackoo must not leave a hand over its own limit"
+        )
+        XCTAssertGreaterThan(after.hand.count, 1, "It should actually have drawn")
+    }
+
+    /// A fourth queen still costs a card afterwards — clearing three doesn't
+    /// make you immune, it just settles the debt you'd run up.
+    func testTheCapCanFallAgainAfterwards() throws {
+        let (engine, id) = try engineWithPoisonedQueens(3)
+        try engine.declareSnackoo(by: id, kind: .threeQueens)
+
+        var state = engine.state
+        let seat = try XCTUnwrap(state.index(of: id))
+        state.players[seat].handCap = max(
+            Rules.poisonedHandCapFloor, state.players[seat].handCap - 1
+        )
+        engine._replaceStateForTesting(state)
+
+        XCTAssertEqual(engine.state.players[seat].handCap, Rules.sustainingHandCap - 1)
+    }
+}
+
+/// Reported: two off-suit sixes under a suit lock were refused with "Two Sixes
+/// would take the tally past 99." The refusal message was hardcoded rather than
+/// asked for, so every refusal claimed to be about the tally.
+final class RunRefusalReasonTests: XCTestCase {
+
+    private func board(lock: Suit?, tally: Int) -> GameState {
+        var state = GameState(
+            players: [
+                PlayerState(id: "a", name: "A", kind: .human, handCap: 5),
+                PlayerState(id: "b", name: "B", kind: .human, handCap: 5),
+            ],
+            currentPlayerIndex: 0, dealerID: "b", cardsDealt: 7
+        )
+        state.tally = tally
+        if let lock { state.suitLock = SuitLock(suit: lock, setByPlayerID: "b") }
+        return state
+    }
+
+    private func sixes(_ suits: [Suit]) -> [Card] {
+        suits.enumerated().map { Card(id: 990 + $0.offset, rank: .six, suit: $0.element) }
+    }
+
+    func testALockedSuitIsReportedAsALockedSuit() throws {
+        let cards = sixes([.spades, .clubs])
+        let reason = Rules.blockingReasonForSet(cards, in: board(lock: .hearts, tally: 10))
+        XCTAssertEqual(reason, .suitLocked(.hearts), "Got: \(String(describing: reason))")
+    }
+
+    func testABustIsStillReportedAsABust() throws {
+        let cards = sixes([.spades, .clubs])
+        // 95 + 6 is already over, so the run dies on its *first* card — the
+        // report names the tally it actually reached, not the one it would have
+        // reached if the rest had been allowed to land.
+        let reason = Rules.blockingReasonForSet(cards, in: board(lock: nil, tally: 95))
+        XCTAssertEqual(reason, .wouldExceed99(resulting: 101))
+    }
+
+    /// When both are true the lock is the more useful thing to say: it holds
+    /// whatever declaration you pick, whereas a bust depends on the choice.
+    func testTheLockIsPreferredWhenBothApply() throws {
+        let cards = sixes([.spades, .clubs])
+        let reason = Rules.blockingReasonForSet(cards, in: board(lock: .hearts, tally: 95))
+        XCTAssertEqual(reason, .suitLocked(.hearts))
+    }
+
+    func testALegalRunHasNoReason() throws {
+        let cards = sixes([.spades, .clubs])
+        XCTAssertNil(Rules.blockingReasonForSet(cards, in: board(lock: nil, tally: 10)))
+    }
+
+    /// And the explanation is the one the player reads.
+    func testTheExplanationNamesTheSuit() throws {
+        let cards = sixes([.spades, .clubs])
+        let text = Rules.blockingReasonForSet(cards, in: board(lock: .hearts, tally: 10))?.explanation
+        XCTAssertEqual(text, "The suit is locked to Hearts.")
+        XCTAssertFalse(text?.contains("99") ?? true, "It must not blame the tally")
+    }
+}

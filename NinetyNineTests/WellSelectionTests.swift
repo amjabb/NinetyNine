@@ -456,3 +456,165 @@ final class WellShuffleTests: XCTestCase {
         XCTAssertFalse(json.contains("card"), "A shuffle names no cards: \(json)")
     }
 }
+
+// MARK: - Seeing the card you didn't pick
+
+/// Going out on the well without being shown the other card is the one moment
+/// the game owes an answer: everybody asks "what was the one I didn't take?".
+/// The card has to survive elimination long enough to be shown, which it very
+/// nearly didn't — elimination shuffles a player's whole holding back into the
+/// deck as its first act.
+final class UnspentWellRevealTests: XCTestCase {
+
+    private func stuckWithTwoWellCards(seed: UInt32) throws -> GameEngine? {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 7, seed: seed
+        )
+        engine._finishWellSelectionForTesting()
+
+        var state = engine.state
+        guard let seat = state.index(of: state.currentPlayer.id) else { return nil }
+        guard state.players[seat].well.count == 2 else { return nil }
+        // Nothing legal in hand, and a ceiling that no well card can clear.
+        state.tally = 99
+        state.players[seat].hand = [Card(id: 770, rank: .king, suit: .spades)]
+        engine._replaceStateForTesting(state)
+        return engine
+    }
+
+    func testEliminationCarriesTheWellCardTheyDidntPick() throws {
+        var checked = 0
+        for seed in UInt32(1)...200 {
+            guard let engine = try stuckWithTwoWellCards(seed: seed) else { continue }
+            let id = engine.state.currentPlayer.id
+            let seat = try XCTUnwrap(engine.state.index(of: id))
+            let well = engine.state.players[seat].well
+            let unchosen = well[1]
+
+            let events = try engine.drawFromWell(by: id, slot: 0)
+            // Only interested in the seeds where the draw actually ended them.
+            guard let elimination = events.first(where: {
+                if case .playerEliminated = $0 { return true }
+                return false
+            }) else { continue }
+
+            guard case .playerEliminated(let who, _, _, let unspent) = elimination else {
+                XCTFail("Unexpected event shape")
+                return
+            }
+            XCTAssertEqual(who, id)
+            XCTAssertEqual(
+                unspent.map(\.id), [unchosen.id],
+                "The card they didn't pick has to come with the elimination"
+            )
+            // And it's genuinely gone from their well by then — the event is the
+            // only place left holding it.
+            XCTAssertTrue(engine.state.players[seat].well.isEmpty)
+            checked += 1
+            break
+        }
+        XCTAssertGreaterThan(checked, 0, "No seed produced an elimination on the well")
+    }
+
+    /// Going out any other way carries nothing, because there was nothing left
+    /// buried to show.
+    func testAnEliminationWithNoWellLeftCarriesNothing() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 7, seed: 4242
+        )
+        engine._finishWellSelectionForTesting()
+
+        let id = engine.state.currentPlayer.id
+        var state = engine.state
+        let seat = try XCTUnwrap(state.index(of: id))
+        state.players[seat].well = []
+        engine._replaceStateForTesting(state)
+
+        let events = try engine.forfeit(by: id)
+        guard case .playerEliminated(_, _, _, let unspent)? = events.first(where: {
+            if case .playerEliminated = $0 { return true }
+            return false
+        }) else {
+            XCTFail("Expected an elimination")
+            return
+        }
+        XCTAssertTrue(unspent.isEmpty, "Nothing buried, nothing to show")
+    }
+}
+
+// MARK: - Blind from the deal, not from your turn
+
+/// Reported on a rematch: "it shows you your cards for like half a second
+/// before having you pick your well."
+///
+/// Wells are banked in seat order. On a rematch the dealer changes, so somebody
+/// else often banks first — and redaction only applied to whoever was *currently*
+/// choosing. Every player waiting their turn could read their own deal. Blind
+/// has to mean blind from the moment the cards land.
+final class BlindFromTheDealTests: XCTestCase {
+
+    private func dealt(players: Int = 3, dealerIndex: Int = 2) throws -> GameEngine {
+        let ids = ["a", "b", "c", "d"].prefix(players)
+        return try GameEngine(
+            seats: ids.map { ($0, $0.uppercased(), .human) },
+            dealerIndex: dealerIndex, cardsDealt: 7, seed: 1234
+        )
+    }
+
+    func testNobodyCanSeeTheirOwnDealUntilTheyHaveBanked() throws {
+        let engine = try dealt()
+        let queue = engine.state.wellSelectionQueue
+        XCTAssertEqual(queue.count, 3)
+
+        // Including the two who aren't choosing yet — this is the case that
+        // leaked.
+        for id in queue {
+            let view = engine.state.view(for: id)
+            XCTAssertTrue(
+                view.yourHand.isEmpty,
+                "\(id) can read their deal while waiting to bank"
+            )
+            XCTAssertTrue(view.youOweAWell)
+        }
+    }
+
+    func testYourHandAppearsAsSoonAsYouHaveBanked() throws {
+        let engine = try dealt()
+        let first = try XCTUnwrap(engine.state.wellChooserID)
+        try engine.chooseWell(slots: [0, 1], by: first)
+
+        let mine = engine.state.view(for: first)
+        XCTAssertEqual(mine.yourHand.count, 5, "Banked, so the rest is yours to see")
+        XCTAssertFalse(mine.youOweAWell)
+
+        // And everybody still waiting is still blind.
+        for id in engine.state.wellSelectionQueue {
+            XCTAssertTrue(engine.state.view(for: id).yourHand.isEmpty)
+            XCTAssertTrue(engine.state.view(for: id).youOweAWell)
+        }
+    }
+
+    /// The specific shape of the report: a dealer change puts somebody else
+    /// first, and the player who is *not* first must still see nothing.
+    func testAWaitingPlayerSeesNothingWhenSomebodyElseBanksFirst() throws {
+        let engine = try dealt(dealerIndex: 0)
+        let chooser = try XCTUnwrap(engine.state.wellChooserID)
+        let waiting = try XCTUnwrap(engine.state.wellSelectionQueue.last)
+        XCTAssertNotEqual(chooser, waiting)
+
+        let theirs = engine.state.view(for: waiting)
+        XCTAssertTrue(theirs.yourHand.isEmpty, "This is the leak that was reported")
+        XCTAssertEqual(theirs.wellChoiceCount, 0, "It isn't their turn to choose yet")
+        XCTAssertTrue(theirs.youOweAWell)
+    }
+
+    func testOnceEveryoneHasBankedNobodyOwesOne() throws {
+        let engine = try dealt()
+        engine._finishWellSelectionForTesting()
+        for player in engine.state.players {
+            XCTAssertFalse(engine.state.view(for: player.id).youOweAWell)
+        }
+    }
+}
