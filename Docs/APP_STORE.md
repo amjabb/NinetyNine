@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.4` (`MARKETING_VERSION`) / `7` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.5` (`MARKETING_VERSION`) / `7` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,7 +28,7 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.4 (build 7)
+## What's New — version 1.5 (build 7)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has not
@@ -81,14 +81,14 @@ RULES, CORRECTED
   is knocked out.
 ```
 
-### TestFlight — test notes for build 7
+### TestFlight — test notes for 1.5 (build 7)
 
 ```
-FIXED IN BUILD 7 — please re-test anything to do with the well. In build 6 a
-well card that turned out playable was revealed, celebrated, and then never
-actually played: the tally didn't move and a Queen never asked what it was.
+FIXED IN 1.5 — please re-test anything to do with the well. In 1.4 a well card
+that turned out playable was revealed, celebrated, and then never actually
+played: the tally didn't move and a Queen never asked what it was.
 
-Also fixed since build 6:
+Also fixed since 1.4:
 • Clearing three poisoned queens gives back the hand capacity they cost. It was
   handing you three cards into a hand that could only hold two.
 • A run refused because of a suit lock said it would bust instead.
@@ -96,7 +96,7 @@ Also fixed since build 6:
 • A Snackoo now gets confetti, for the whole table.
 • The other well card is turned over before you're told you've lost.
 
-FROM BUILD 6
+FROM 1.4
 
 Shake the phone on the "pick one" screen and your two well cards shuffle. It's
 a real shuffle — seeded and recorded like every other move, so everyone's game
@@ -115,9 +115,10 @@ Fixed since build 5, all reported from play:
   but the one it was happening to.
 • The table says who plays next — "then Bo", or "then you".
 
-WORTH KNOWING: this build refuses online matches started in 1.2 or 1.3. Older
-clients can't read the new shuffle action, so their match would quietly stop
-updating rather than fail loudly. Anything in flight needs restarting.
+WORTH KNOWING: this build refuses online matches started in 1.2 or 1.3. A 1.4
+match still works — nothing crossing the wire changed between 1.4 and 1.5. Those
+clients can't read the shuffle action, so their match would quietly stop
+updating rather than fail loudly. Anything in flight from them needs restarting.
 
 STILL UNTESTED: two-device Game Center has never run against a real network.
 Turn passing, quitting mid-match, and invitations are what to hammer.
