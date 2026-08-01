@@ -61,10 +61,14 @@ final class GameKitTransport: NSObject, MatchTransport {
         /// This is the one kind of incompatibility that can't be detected from
         /// the data itself: an old log applies cleanly to new code and simply
         /// produces a different game, so two players would sit looking at
-        /// contradictory tables with nothing flagged. Version 2 is where the
-        /// well stopped being dealt and started being chosen, which changes the
-        /// deal for every match.
-        static let currentRules = 2
+        /// contradictory tables with nothing flagged.
+        ///
+        ///  - 2: the well stopped being dealt and started being chosen, which
+        ///    changes the deal for every match.
+        ///  - 3: shuffling the well became an action. This one breaks the *other*
+        ///    way — an older client can't decode a case it has never heard of, so
+        ///    the whole payload fails and its match quietly stops updating.
+        static let currentRules = 3
 
         var rulesVersion: Int = MatchPayload.currentRules
         var seed: UInt32

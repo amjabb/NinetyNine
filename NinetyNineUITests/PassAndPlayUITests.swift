@@ -184,6 +184,13 @@ final class PassAndPlayUITests: XCTestCase {
             } else if app.staticTexts["Your move"].exists {
                 if tapFirst(["Snackoo"]) { continue }
                 if tapAPlayableCard() { continue }
+            } else if app.otherElements["well-reveal"].isHittable {
+                // Somebody is at the well; it holds the screen for a few
+                // seconds. Checked *last* and only when nothing else was
+                // actionable — resolving an identifier that isn't on screen
+                // costs seconds in XCUITest retries, and at the top of the loop
+                // it was burning more time than the game.
+                Thread.sleep(forTimeInterval: 0.4)
             }
         }
 

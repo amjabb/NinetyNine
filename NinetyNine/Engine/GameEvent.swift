@@ -43,6 +43,9 @@ enum GameEvent: Equatable, Sendable {
     case snackoo(by: String, kind: SnackooKind)
 
     // The well
+    /// The two face-down well cards were shuffled before one was picked. Public
+    /// — the whole table should see somebody stalling over it.
+    case wellShuffled(by: String)
     case wellRevealed(card: Card, by: String, playable: Bool)
     case wellPlayed(card: Card, by: String)
     case wellBonusDrawn(count: Int, by: String)

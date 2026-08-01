@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.3` (`MARKETING_VERSION`) / `5` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.4` (`MARKETING_VERSION`) / `6` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,22 +28,24 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.3 (build 5)
+## What's New — version 1.4 (build 6)
 
-**Two audiences, two texts.** The App Store still shows **1.0** — 1.1 and 1.2
-only ever went to TestFlight — so anyone updating from the store has not seen
-online play, the long-press run, or any of last week's rules fixes either. The
-store text is therefore cumulative. The TestFlight note is just the delta.
+**Two audiences, two texts.** The App Store still shows **1.0** — everything
+since has only reached TestFlight — so anyone updating from the store has not
+seen online play, the chosen well, or any of the rules corrections. The store
+text is cumulative for that reason. The TestFlight note is only the delta from
+build 5.
 
 ### App Store — "What's New in This Version"
 
 ```
-YOUR WELL IS NOW YOURS TO BUILD
+YOUR WELL IS NOW YOURS TO BUILD — AND YOU BUILD IT BLIND
 
-Everything the dealer deals goes to your hand — and before a card is played you
-bury two of it, face down, as your well. You don't get to look. Nobody knows
+Everything the dealer deals goes to your hand, and before a card is played you
+bury two of it face down as your well. You don't get to look. Nobody knows
 what's in a well, including you, right up until the turn you're forced to open
-it.
+it — and when that turn comes you can shake the phone to shuffle the two, the
+way you would at a table.
 
 So the dealer's number isn't a hand size any more, it's how many cards to deal.
 Deal seven and you start holding five. Deal five and you start holding three and
@@ -56,10 +58,12 @@ ALSO NEW SINCE 1.0
   back tomorrow.
 • Pass and play for two to six on one device, with the screen covering itself
   between turns — including while each player builds their well.
-• Press and hold a card to play two or more of a rank as a single turn. Two
+• Press and hold a card to play every copy of it you're holding as one turn. Two
   fours reverse twice and cancel out; three flip the direction once.
-• The turn queens go poisonous now takes the screen, instead of sliding past in
-  a banner you could miss.
+• The whole table watches when somebody goes to the well, and gets a moment when
+  they survive it.
+• The turn queens go poisonous now takes the screen instead of sliding past.
+• The table says who plays next, and marks anyone who skipped and owes two.
 
 RULES, CORRECTED
 
@@ -70,44 +74,39 @@ RULES, CORRECTED
   telling you you're out.
 • Poisoned queens are kept, not discarded — three of them is still a Snackoo —
   and each one costs a card of hand limit, all the way down.
-• A Queen ignores the suit lock whatever suit she is. Played as an 8 she now
-  asks where to point the lock, instead of choosing for you.
+• A Queen ignores the suit lock whatever suit she is. Played as an 8 she asks
+  where to point the lock, instead of choosing for you.
 • An 8 of any suit can take over a lock — but only played directly on another 8.
 • Playing an 8 never forces you to lock a suit, and the lock lifts when a player
   is knocked out.
 ```
 
-### TestFlight — test notes for build 5
+### TestFlight — test notes for build 6
 
 ```
-The well is now yours to build, and you build it blind.
+Shake the phone on the "pick one" screen and your two well cards shuffle. It's
+a real shuffle — seeded and recorded like every other move, so everyone's game
+agrees — not an animation over a fixed order. There's a Shuffle button too, since
+a shake is undiscoverable and not everyone can do one. Deliberately NOT available
+while you're burying your well at the start.
 
-Everything dealt goes to your hand; before play starts you bury two of it face
-down. You never see those two. That's deliberate — being able to read your own
-well told you your outs from turn one and made the reveal a formality.
+Fixed since build 5, all reported from play:
+• Holding three of a rank, only two could be played. The builder opened on a
+  pair and greyed the rest so hard they looked disabled. It now opens on every
+  copy you hold, trimmed to the longest run that's actually legal.
+• Underneath that, a real one: holding three of a rank where all three would
+  bust made the rank un-runnable outright — the long press did nothing at all.
+• Surviving the well gets a moment now, with the two-card reward named.
+• Everyone sees a player go to the well. It used to be invisible from every seat
+  but the one it was happening to.
+• The table says who plays next — "then Bo", or "then you".
 
-The dealer's number now means CARDS TO DEAL, not hand size. Deal 7, hold 5.
-Deal 5, hold 3 and draw two on your first turn.
+WORTH KNOWING: this build refuses online matches started in 1.2 or 1.3. Older
+clients can't read the new shuffle action, so their match would quietly stop
+updating rather than fail loudly. Anything in flight needs restarting.
 
-Fixed since build 4:
-• A Queen played as an 8 now asks which suit to lock. It used to pick one
-  silently — every suit gives the same tally, so its tie-break couldn't tell
-  them apart.
-• An 8 of any suit takes over a lock only when played directly on another 8.
-• "Lock nothing" is now actually on screen when you play an 8. It was always
-  a legal move; the sheet was filtering it out.
-• Concede and Quit are now SDQ (Self Disqualify).
-• A player who skipped is marked — amber ring, "OWES 2" — so whoever plays
-  before them can squeeze it.
-
-WORTH KNOWING: this build refuses online matches started in 1.2. An old match
-would still apply its moves cleanly here and just deal a different game, so two
-players would sit looking at different tables with nothing reported. Any match
-in flight will need restarting.
-
-STILL UNTESTED: two-device Game Center play has never run against a real
-network. Turn passing, quitting mid-match, and invitations are the things to
-hammer.
+STILL UNTESTED: two-device Game Center has never run against a real network.
+Turn passing, quitting mid-match, and invitations are what to hammer.
 ```
 
 ---

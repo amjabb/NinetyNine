@@ -473,6 +473,33 @@ final class GameEngine {
 
     // MARK: - The well
 
+    /// Shuffle the two face-down well cards, the way people do it at a table:
+    /// you shake them about before picking one, because the ritual is the point.
+    ///
+    /// It is a *real* shuffle, drawn from the same seeded source as everything
+    /// else and recorded as an action, rather than an animation over a fixed
+    /// order. Nobody could tell the difference — the cards are face down and the
+    /// player has never seen them — but a game that quietly lies during its most
+    /// tense moment is a bad thing to have in a codebase, and this one keeps a
+    /// stricter rule anyway: nothing that affects play happens outside the log.
+    @discardableResult
+    func shuffleWell(by playerID: String) throws -> [GameEvent] {
+        guard !state.isOver else { throw GameError.gameOver }
+        guard !state.isChoosingWells else { throw GameError.notChoosingWells }
+        guard state.currentPlayer.id == playerID else { throw GameError.notYourTurn }
+        guard let seat = state.index(of: playerID) else { throw GameError.notYourTurn }
+        // Only when there is genuinely a choice to shuffle: one card is not a
+        // shuffle, and a card already turned over cannot be un-seen.
+        guard state.players[seat].well.count > 1 else { throw GameError.wellEmpty }
+        guard state.pendingWell == nil else { throw GameError.noPendingWell }
+
+        state.players[seat].well = random.shuffled(state.players[seat].well)
+        note("\(state.players[seat].name) shuffles the well.")
+        return [.wellShuffled(by: playerID)]
+    }
+
+
+
     /// Turn one of the player's two well cards face up, chosen at random.
     /// A playable card must then be resolved with `resolveWell`; an unplayable
     /// one eliminates its owner on the spot.

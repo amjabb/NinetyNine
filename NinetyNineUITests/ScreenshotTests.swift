@@ -133,7 +133,15 @@ final class ScreenshotTests: XCTestCase {
             }
 
             guard isPlayersTurn else {
-                Thread.sleep(forTimeInterval: 0.2)
+                // Somebody at the well holds the screen for a few seconds.
+                // Checked here rather than at the top of the loop: resolving an
+                // identifier that isn't on screen costs seconds in XCUITest
+                // retries, so it must only run when nothing else was actionable.
+                if app.otherElements["well-reveal"].isHittable {
+                    Thread.sleep(forTimeInterval: 0.4)
+                } else {
+                    Thread.sleep(forTimeInterval: 0.2)
+                }
                 continue
             }
             if pickAWellCardIfAsked() { continue }
@@ -150,10 +158,11 @@ final class ScreenshotTests: XCTestCase {
             // "The Well" every iteration races the opponents' turns, and
             // resolving a query mid-transition throws rather than returning
             // empty.
+            // Snackoo is deliberately absent from this list: it's optional, it
+            // comes and goes with the hand, and no store shot needs it — chasing
+            // it only made this capture race a button already withdrawing.
             if app.staticTexts["No legal card"].exists {
                 if tapFirstExisting(["The Well", "Skip", "No outs"]) { continue }
-            } else if tapFirstExisting(["Snackoo"]) {
-                continue
             }
             if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) { continue }
             if tapAPlayableCard() { continue }
@@ -257,6 +266,11 @@ final class ScreenshotTests: XCTestCase {
     @discardableResult
     private func tapSteadily(_ element: XCUIElement) -> Bool {
         guard element.exists, element.isHittable else { return false }
+        // Re-check immediately before reading the frame. Some controls here are
+        // transient — Snackoo appears and withdraws as the hand changes — and
+        // reading `.frame` on one that has just gone raises rather than
+        // returning nil, which fails the whole test.
+        guard element.exists else { return false }
         let frame = element.frame
         guard frame.width > 0, frame.height > 0 else { return false }
         app.coordinate(withNormalizedOffset: .zero)

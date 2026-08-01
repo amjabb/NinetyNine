@@ -373,8 +373,13 @@ struct GameTableView: View {
                 onChoose: { viewModel.chooseWellCard(slot: $0) },
                 onCancel: { viewModel.cancelWellChoice() },
                 onSnackoo: { viewModel.takeWellSnackoo() },
-                onDecline: { viewModel.declineWellSnackoo() }
+                onDecline: { viewModel.declineWellSnackoo() },
+                isShuffling: viewModel.isShufflingWell,
+                onShuffle: wellIsHuman ? { viewModel.shuffleWell() } : nil
             )
+            // Scoped to this overlay: the notification is global, so without the
+            // gate a shake meant for the well would fire from anywhere.
+            .onShake(isEnabled: wellIsHuman) { viewModel.shuffleWell() }
         }
 
         if let poisoning = viewModel.queenPoisoning {

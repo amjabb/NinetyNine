@@ -33,6 +33,9 @@ enum PlayerAction: Codable, Hashable, Sendable {
     /// into your dealt cards in their dealt order.
     case chooseWell(slots: [Int])
 
+    /// Shuffle your own two face-down well cards before picking one.
+    case shuffleWell
+
     /// Turn over one of the player's two face-down well cards. `slot` is which
     /// one they chose — both are face down, so this leaks nothing; it is simply
     /// left-or-right. The authority still owns what the card turns out to be.
@@ -142,6 +145,9 @@ extension GameEngine {
         case .chooseWell(let slots):
             return try chooseWell(slots: slots, by: playerID)
 
+        case .shuffleWell:
+            return try shuffleWell(by: playerID)
+
         case .drawFromWell(let slot):
             return try drawFromWell(by: playerID, slot: slot)
 
@@ -223,6 +229,10 @@ extension GameEngine {
         if options.canUseWell {
             // One action per slot, so the UI can offer both cards.
             for slot in 0..<player.well.count { actions.append(.drawFromWell(slot: slot)) }
+            // Only worth offering while there are two to shuffle between.
+            if player.well.count > 1, state.pendingWell == nil {
+                actions.append(.shuffleWell)
+            }
         }
         if options.canSkip { actions.append(.skip) }
         if options.isStranded { actions.append(.concede) }

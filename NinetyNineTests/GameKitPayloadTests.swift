@@ -300,10 +300,26 @@ final class MatchCompatibilityTests: XCTestCase {
     }
 
     func testTheVersionSurvivesARoundTrip() throws {
-        let data = try JSONEncoder().encode(payload(version: 2))
+        // Against whatever this build's version is, not a hardcoded number —
+        // otherwise this test starts failing every time the rules move, which
+        // is exactly when it needs to still be measuring something.
+        let current = GameKitTransport.MatchPayload.currentRules
+        let data = try JSONEncoder().encode(payload(version: current))
         let decoded = try JSONDecoder().decode(GameKitTransport.MatchPayload.self, from: data)
-        XCTAssertEqual(decoded.rulesVersion, 2)
+        XCTAssertEqual(decoded.rulesVersion, current)
         XCTAssertTrue(decoded.isReplayable)
+    }
+
+    /// Every version before this one is refused. Shuffling the well became an
+    /// action in rules 3, and an older client can't decode a case it has never
+    /// heard of — its match would quietly stop updating rather than fail loudly.
+    func testEveryEarlierRulesVersionIsRefused() {
+        for version in 1..<GameKitTransport.MatchPayload.currentRules {
+            XCTAssertFalse(
+                payload(version: version).isReplayable,
+                "A rules-\(version) match should be refused"
+            )
+        }
     }
 
     func testTheRefusalExplainsItselfToThePlayer() {

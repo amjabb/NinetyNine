@@ -135,3 +135,109 @@ final class QueenMomentTests: XCTestCase {
         )
     }
 }
+
+// MARK: - Watching someone else go to the well
+
+/// The well is the most dramatic thing that happens in a round, and it used to
+/// be invisible from every seat but the one it was happening to — the overlay
+/// was only ever driven by the local player's own draw, so an opponent quietly
+/// survived or quietly vanished. The whole table watches now.
+@MainActor
+final class WatchingTheWellTests: XCTestCase {
+
+    private func table() async -> GameViewModel {
+        let model = GameViewModel.solo(
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 7,
+            playerName: "You", dealerID: nil, seed: 1
+        )
+        await model.begin()
+        var guardCount = 0
+        while model.view?.youAreChoosingYourWell == true && guardCount < 8 {
+            guardCount += 1
+            model.chooseWell(slots: [0, 1])
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        return model
+    }
+
+    /// Collect the phases the overlay passes through while absorbing a timeline.
+    private func phases(
+        _ model: GameViewModel, absorbing events: [GameEvent]
+    ) async -> [GameViewModel.WellRevealPhase] {
+        var seen: [GameViewModel.WellRevealPhase] = []
+        let absorbing = Task { await model._absorbForTesting(events) }
+        let deadline = Date().addingTimeInterval(8)
+        while !absorbing.isCancelled, Date() < deadline {
+            let phase = model.wellReveal
+            if seen.last != phase { seen.append(phase) }
+            if absorbing.isCancelled { break }
+            try? await Task.sleep(for: .milliseconds(40))
+            if case .idle = model.wellReveal, seen.count > 1 { break }
+        }
+        await absorbing.value
+        return seen
+    }
+
+    func testAnOpponentSurvivingTheWellIsShownToEveryone() async throws {
+        let model = await table()
+        let card = Card(id: 910, rank: .three, suit: .clubs)
+
+        let seen = await phases(model, absorbing: [
+            .wellRevealed(card: card, by: "ai0", playable: true)
+        ])
+
+        XCTAssertTrue(
+            seen.contains { if case .rolling(let id) = $0 { return id == "ai0" }; return false },
+            "The table should see them reach for it: \(seen)"
+        )
+        XCTAssertTrue(
+            seen.contains { if case .revealed(let c, let ok, let id) = $0 {
+                return c == card && ok && id == "ai0"
+            }; return false },
+            "…and see the card turn over: \(seen)"
+        )
+        XCTAssertTrue(
+            seen.contains { if case .survived(_, let id) = $0 { return id == "ai0" }; return false },
+            "…and see them get away with it: \(seen)"
+        )
+    }
+
+    func testAnOpponentLosingToTheWellIsAlsoShown() async throws {
+        let model = await table()
+        let card = Card(id: 911, rank: .king, suit: .spades)
+
+        let seen = await phases(model, absorbing: [
+            .wellRevealed(card: card, by: "ai1", playable: false)
+        ])
+
+        XCTAssertTrue(
+            seen.contains { if case .revealed(_, let ok, let id) = $0 { return !ok && id == "ai1" }
+                            return false },
+            "A losing draw should be shown too: \(seen)"
+        )
+        XCTAssertFalse(
+            seen.contains { if case .survived = $0 { return true }; return false },
+            "Nobody survived that one"
+        )
+    }
+
+    /// It has to hand the table back afterwards, or play stops.
+    func testTheOverlayClearsWhenItsDone() async throws {
+        let model = await table()
+        await model._absorbForTesting([
+            .wellRevealed(card: Card(id: 912, rank: .four, suit: .hearts), by: "ai0", playable: true)
+        ])
+        XCTAssertEqual(model.wellReveal, .idle)
+    }
+
+    /// Your own draw is driven by your own action, with its own pacing — this
+    /// path must not fire for it as well, or the reveal happens twice.
+    func testYourOwnDrawIsNotDrivenFromTheTimeline() async throws {
+        let model = await table()
+        let you = try XCTUnwrap(model.viewingPlayerID)
+        await model._absorbForTesting([
+            .wellRevealed(card: Card(id: 913, rank: .two, suit: .clubs), by: you, playable: true)
+        ])
+        XCTAssertEqual(model.wellReveal, .idle, "The local draw has its own path")
+    }
+}

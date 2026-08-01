@@ -305,3 +305,154 @@ final class BlindWellTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(engine.state.player(id: "a")).well.count, 2)
     }
 }
+
+// MARK: - Shuffling the well before you pick
+
+/// Shaking the phone mixes the two face-down well cards, the way people do it at
+/// a table. Because the pick is blind, a fake shuffle would be undetectable —
+/// which is exactly why it isn't one. It goes through the seeded source and into
+/// the action log like everything else that touches the game.
+final class WellShuffleTests: XCTestCase {
+
+    private func stuck(seed: UInt32) throws -> GameEngine? {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: seed
+        )
+        engine._finishWellSelectionForTesting()
+
+        var state = engine.state
+        guard let seat = state.index(of: state.currentPlayer.id) else { return nil }
+        // A hand with nothing legal, so the well is the only way on.
+        state.tally = 99
+        state.players[seat].hand = [Card(id: 700, rank: .king, suit: .spades)]
+        engine._replaceStateForTesting(state)
+        return engine
+    }
+
+    func testShufflingReordersTheWellAndIsAnnounced() throws {
+        let engine = try XCTUnwrap(try stuck(seed: 31337))
+        let id = engine.state.currentPlayer.id
+        let seat = try XCTUnwrap(engine.state.index(of: id))
+        let before = engine.state.players[seat].well.map(\.id)
+        XCTAssertEqual(before.count, 2)
+
+        // A two-card shuffle is a coin flip, so shuffle until it lands the other
+        // way — the point is that it *can* change, not that it always does.
+        var swapped = false
+        var events: [GameEvent] = []
+        for _ in 0..<20 {
+            events = try engine.shuffleWell(by: id)
+            if engine.state.players[seat].well.map(\.id) != before { swapped = true; break }
+        }
+        XCTAssertTrue(swapped, "Twenty shuffles never changed the order — it isn't shuffling")
+        XCTAssertEqual(events, [.wellShuffled(by: id)], "The table should be told")
+        XCTAssertEqual(
+            Set(engine.state.players[seat].well.map(\.id)), Set(before),
+            "A shuffle reorders; it must not change which cards they are"
+        )
+    }
+
+    /// Once a card is face up it cannot be un-seen, so there is nothing left to
+    /// shuffle. Asserted against the pending reveal directly rather than by
+    /// drawing — a real draw usually eliminates the player here, and the test
+    /// would be measuring that instead.
+    func testShufflingIsRefusedOnceACardIsTurnedOver() throws {
+        let engine = try XCTUnwrap(try stuck(seed: 31337))
+        let id = engine.state.currentPlayer.id
+        var state = engine.state
+        let seat = try XCTUnwrap(state.index(of: id))
+        state.pendingWell = PendingWell(
+            playerID: id, card: state.players[seat].well[0], isPlayable: true
+        )
+        engine._replaceStateForTesting(state)
+
+        XCTAssertThrowsError(try engine.shuffleWell(by: id)) {
+            XCTAssertEqual($0 as? GameError, .noPendingWell)
+        }
+    }
+
+    func testOnlyTheCurrentPlayerMayShuffle() throws {
+        let engine = try XCTUnwrap(try stuck(seed: 31337))
+        let other = try XCTUnwrap(engine.state.players.first { $0.id != engine.state.currentPlayer.id })
+        XCTAssertThrowsError(try engine.shuffleWell(by: other.id)) {
+            XCTAssertEqual($0 as? GameError, .notYourTurn)
+        }
+    }
+
+    /// One card is not a shuffle.
+    func testASpentWellCannotBeShuffled() throws {
+        let engine = try XCTUnwrap(try stuck(seed: 31337))
+        let id = engine.state.currentPlayer.id
+        var state = engine.state
+        let seat = try XCTUnwrap(state.index(of: id))
+        state.players[seat].well = Array(state.players[seat].well.prefix(1))
+        engine._replaceStateForTesting(state)
+
+        XCTAssertThrowsError(try engine.shuffleWell(by: id)) {
+            XCTAssertEqual($0 as? GameError, .wellEmpty)
+        }
+    }
+
+    /// It must never be offered during the opening bury — a shake there would
+    /// reorder cards the player is in the middle of choosing between.
+    func testShufflingIsRefusedWhileWellsAreStillBeingChosen() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human)],
+            dealerIndex: 1, cardsDealt: 7, seed: 4242
+        )
+        XCTAssertTrue(engine.state.isChoosingWells)
+        XCTAssertThrowsError(try engine.shuffleWell(by: "a")) {
+            XCTAssertEqual($0 as? GameError, .notChoosingWells)
+        }
+    }
+
+    /// The whole reason it's a real shuffle rather than an animation: every
+    /// client has to end up with the same well, or one of them draws a different
+    /// card and the match silently forks.
+    func testAShuffleReplaysToTheSameWellOnEveryClient() throws {
+        let seats: [(String, String, PlayerState.PlayerKind)] = [
+            ("a", "A", .human), ("b", "B", .human),
+        ]
+        let source = try GameEngine(seats: seats, dealerIndex: 1, cardsDealt: 7, seed: 8675309)
+
+        var log: [SubmittedAction] = []
+        var sequence = 0
+        for id in ["a", "b"] {
+            let action = PlayerAction.chooseWell(slots: [0, 1])
+            let submitted = SubmittedAction(playerID: id, action: action, sequence: sequence)
+            sequence += 1
+            try source.apply(submitted)
+            log.append(submitted)
+        }
+
+        // Shuffle a few times, so a replay that ignored them would diverge.
+        let actor = source.state.currentPlayer.id
+        for _ in 0..<3 {
+            let submitted = SubmittedAction(playerID: actor, action: .shuffleWell, sequence: sequence)
+            sequence += 1
+            try source.apply(submitted)
+            log.append(submitted)
+        }
+
+        let replay = try GameEngine(seats: seats, dealerIndex: 1, cardsDealt: 7, seed: 8675309)
+        for entry in log { try replay.apply(entry) }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        XCTAssertEqual(
+            try encoder.encode(replay.state), try encoder.encode(source.state),
+            "A peer replaying the log ended up with a different well"
+        )
+    }
+
+    /// And it must survive the wire, since it crosses it.
+    func testTheShuffleActionRoundTripsAndCarriesNothingSecret() throws {
+        let action = PlayerAction.shuffleWell
+        let data = try JSONEncoder().encode(action)
+        XCTAssertEqual(try JSONDecoder().decode(PlayerAction.self, from: data), action)
+
+        let json = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(json.contains("card"), "A shuffle names no cards: \(json)")
+    }
+}

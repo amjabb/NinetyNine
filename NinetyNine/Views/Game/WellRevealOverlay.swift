@@ -22,6 +22,10 @@ struct WellRevealOverlay: View {
     var onSnackoo: () -> Void = {}
     /// Decline it and accept elimination.
     var onDecline: () -> Void = {}
+    /// True while the two well cards are trading places.
+    var isShuffling: Bool = false
+    /// Shuffle them before picking. Nil when this player isn't the one choosing.
+    var onShuffle: (() -> Void)?
 
     @Environment(\.motion) private var motion
     @State private var shuffleOffset: CGFloat = 0
@@ -53,6 +57,9 @@ struct WellRevealOverlay: View {
             .padding(30)
         }
         .transition(.opacity)
+        // `.contain` so the cards and buttons inside keep their own identifiers.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("well-reveal")
     }
 
     // MARK: Caption
@@ -99,16 +106,26 @@ struct WellRevealOverlay: View {
                     } label: {
                         CardBackView(isHighlighted: true)
                             .frame(width: slots > 1 ? 132 : 156)
-                            .cardShadow(lift: 18)
+                            .cardShadow(lift: isShuffling ? 26 : 18)
                             .rotationEffect(.degrees(slots > 1 ? (slot == 0 ? -5 : 5) : 0))
+                            // They swap places, which is the whole point: after
+                            // this you cannot say which one you were looking at.
+                            .offset(
+                                x: isShuffling ? (slot == 0 ? 78 : -78) : 0,
+                                y: isShuffling ? (slot == 0 ? -16 : 16) : 0
+                            )
+                            .rotationEffect(.degrees(isShuffling ? (slot == 0 ? 14 : -14) : 0))
+                            .zIndex(slot == 0 ? 1 : 0)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isShuffling)
                     .accessibilityLabel(slots > 1
                         ? "Well card \(slot + 1) of \(slots)"
                         : "Your last well card")
                     .accessibilityHint("Turn this one over")
                 }
             }
+            .animation(motion.animation(Motion.cardLift), value: isShuffling)
 
         case .rolling:
             // Two face-down cards trading places — you can see there's a choice
@@ -200,16 +217,41 @@ struct WellRevealOverlay: View {
     @ViewBuilder
     private var verdictText: some View {
         switch phase {
-        case .choosing:
-            Button(action: onCancel) {
-                Text("Not yet")
-                    .font(Typography.bodyEmphasised)
-                    .foregroundStyle(Palette.ivoryDim)
-                    .padding(.horizontal, 26)
-                    .padding(.vertical, 11)
-                    .background(Capsule().fill(.white.opacity(0.07)))
+        case .choosing(_, let slots):
+            VStack(spacing: 12) {
+                if slots > 1, let onShuffle {
+                    // A shake is undiscoverable and unusable for plenty of
+                    // people, so the gesture is a flourish on top of a button —
+                    // never the only way to do it.
+                    Button {
+                        onShuffle()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "shuffle")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Shuffle")
+                                .font(Typography.bodyEmphasised)
+                        }
+                        .foregroundStyle(Palette.brassLight)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 11)
+                        .background(
+                            Capsule().strokeBorder(Palette.brassDeep.opacity(0.8), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isShuffling)
+                    .opacity(isShuffling ? 0.5 : 1)
+                    .accessibilityIdentifier("well-shuffle")
+                    .accessibilityHint("Mix the two cards so neither is the one you were looking at")
+
+                    Text("or give the phone a shake")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.ivoryFaint)
+                }
+
+                cancelButton
             }
-            .buttonStyle(.plain)
 
         case .rolling:
             Text("Drawing…")
@@ -295,6 +337,19 @@ struct WellRevealOverlay: View {
         case .idle:
             EmptyView()
         }
+    }
+
+    /// Backing out of the well without turning anything over.
+    private var cancelButton: some View {
+        Button(action: onCancel) {
+            Text("Not yet")
+                .font(Typography.bodyEmphasised)
+                .foregroundStyle(Palette.ivoryDim)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 11)
+                .background(Capsule().fill(.white.opacity(0.07)))
+        }
+        .buttonStyle(.plain)
     }
 
     private func verdictDetail(card: Card, playable: Bool) -> String {

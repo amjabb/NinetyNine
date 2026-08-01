@@ -267,6 +267,11 @@ final class FlowUITests: XCTestCase {
                 } else if app.staticTexts["Your move"].exists {
                     if tapFirstExisting(byLabelPrefix: ["Snackoo"]) == true { continue }
                     if tapAPlayableCard() { continue }
+                } else if app.otherElements["well-reveal"].isHittable {
+                    // Somebody is at the well; it holds the screen. Last resort
+                    // only — resolving a missing identifier costs seconds in
+                    // retries, so this must not run on every iteration.
+                    Thread.sleep(forTimeInterval: 0.4)
                 }
             }
 
@@ -326,6 +331,10 @@ final class FlowUITests: XCTestCase {
             } else if app.staticTexts["Your move"].exists {
                 if tapFirstExisting(byLabelPrefix: ["Snackoo"]) == true { continue }
                 if tapAPlayableCard() { continue }
+            } else if app.otherElements["well-reveal"].isHittable {
+                // Somebody is at the well; it holds the screen for a few
+                // seconds. Last resort only — see above.
+                Thread.sleep(forTimeInterval: 0.4)
             } else if app.otherElements["well-selection"].isHittable {
                 // A rematch deals again, so the well builder can reappear
                 // mid-loop. Checked *last* and only when nothing else was

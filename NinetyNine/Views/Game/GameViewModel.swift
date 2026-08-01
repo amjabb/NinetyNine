@@ -49,6 +49,9 @@ final class GameViewModel: ObservableObject {
     @Published var pendingSet: PendingSet?
     /// The once-a-game moment when queens turn poisonous.
     @Published var queenPoisoning: QueenPoisoning?
+    /// True for the length of a well shuffle, so the cards can animate and a
+    /// second shake can't interrupt the first.
+    @Published private(set) var isShufflingWell = false
     /// The achievement toast currently on screen.
     @Published var achievementToast: Achievement?
     /// True while cards are being dealt at the start of a game.
@@ -304,6 +307,29 @@ final class GameViewModel: ObservableObject {
     var isChoosingWell: Bool {
         guard let view else { return false }
         return view.youAreChoosingYourWell && !awaitingHandoff
+    }
+
+    /// Shuffle the two face-down well cards before picking one.
+    ///
+    /// Only while the "pick one" prompt is up — deliberately *not* during the
+    /// opening bury, where a shake would reorder cards the player is in the
+    /// middle of choosing between and undo the selection under their hand.
+    func shuffleWell() {
+        guard case .choosing(let playerID, let slots) = wellReveal, slots > 1 else { return }
+        guard playerID == viewingPlayerID else { return }
+        guard !isShufflingWell else { return }
+
+        isShufflingWell = true
+        Haptics.shared.play(.cardLift)
+        SoundEngine.shared.play(.shuffle, volume: 0.8)
+
+        Task {
+            await submit(.shuffleWell, by: playerID) {}
+            // Let the animation land before another shake is accepted, or a
+            // vigorous shake queues a dozen of them.
+            try? await Task.sleep(for: .milliseconds(420))
+            isShufflingWell = false
+        }
     }
 
     /// Bank two positions and let play begin.
@@ -1033,6 +1059,36 @@ final class GameViewModel: ObservableObject {
                 }
                 try? await Task.sleep(for: .milliseconds(180))
                 cardInFlight = nil
+
+            // Somebody *else* is going to the well. This is the most dramatic
+            // thing that happens in a round and it was invisible unless it was
+            // happening to you: the overlay was only ever driven by the local
+            // player's own draw, so from every other seat a player quietly
+            // survived or quietly vanished.
+            //
+            // The whole table watches now, at the same pace the actor sees it.
+            case .wellRevealed(let card, let by, let playable) where by != viewingPlayerID:
+                withAnimation(Motion.drama) { wellReveal = .rolling(playerID: by) }
+                Haptics.shared.play(.wellReveal)
+                SoundEngine.shared.play(.wellRoll, volume: 0.75)
+                try? await Task.sleep(for: .milliseconds(850))
+
+                withAnimation(Motion.drama) {
+                    wellReveal = .revealed(card: card, playable: playable, playerID: by)
+                }
+                SoundEngine.shared.play(playable ? .wellSurvive : .eliminated, volume: 0.75)
+                Haptics.shared.play(playable ? .wellSurvive : .eliminated)
+                try? await Task.sleep(for: .milliseconds(1_300))
+
+                if playable {
+                    withAnimation(Motion.drama) {
+                        wellReveal = .survived(card: card, playerID: by)
+                    }
+                    try? await Task.sleep(for: .milliseconds(1_200))
+                }
+                // An unplayable card is left on screen: the elimination event
+                // follows immediately and says what it cost them.
+                withAnimation(Motion.drama) { wellReveal = .idle }
 
             case .playerEliminated(let id, let reason, _):
                 if id == viewingPlayerID {
