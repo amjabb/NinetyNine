@@ -480,7 +480,10 @@ final class EngineTests: XCTestCase {
 
         XCTAssertNotEqual(engine.state.currentPlayer.id, mover.id, "Turn should pass")
         let refilled = try XCTUnwrap(engine.state.player(id: mover.id))
-        XCTAssertEqual(refilled.hand.count, 5, "Hand refills to cap")
+        XCTAssertEqual(
+            refilled.hand.count, Rules.sustainingHandCap,
+            "Hand refills to the sustaining cap"
+        )
         XCTAssertEqual(engine.state.discardPile.count, 1)
     }
 

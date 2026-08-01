@@ -116,7 +116,9 @@ struct WellSelectionView: View {
             GeometryReader { geometry in
                 let width = cardWidth(fitting: geometry.size.width)
                 HStack(spacing: cardSpacing) {
-                    ForEach(0..<max(0, slotCount), id: \.self) { slot in
+                    // Array-wrapped: the bare range initialiser is for constant
+                    // counts and caches the first one it sees.
+                    ForEach(Array(0..<max(0, slotCount)), id: \.self) { slot in
                         faceDownCard(slot, width: width)
                     }
                 }

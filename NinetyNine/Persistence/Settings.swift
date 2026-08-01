@@ -18,7 +18,7 @@ final class Settings: ObservableObject {
     @AppStorage("settings.difficulty") var difficulty: Difficulty = .sharp
     @AppStorage("settings.opponents") var opponentCount: Int = 2
     /// How many cards the dealer deals — *including* the two each player banks
-    /// as their well. Deal 7 and you open with five in hand.
+    /// as their well. Deal 7 and you open with five, playing down to three.
     ///
     /// The storage key deliberately changed with the meaning: the old
     /// "settings.handSize" held a number that counted only the hand, and

@@ -8,7 +8,7 @@
 
 1. **Deck:** one 52-card deck, no jokers.
 2. **Dealer:** chosen at random for the very first game. In any later game (rematch), the player who was **eliminated first** in the previous game deals next.
-3. **Cards to deal:** the dealer picks how many cards to deal — from **3** up to a cap set by player count, so the deck can't run out mid-deal. Two of whatever is dealt become each player's **well**, so the number is not a hand size: deal 7 and you open holding 5, deal 5 and you open holding 3.
+3. **Cards to deal:** the dealer picks how many cards to deal — from **3** up to a cap set by player count, so the deck can't run out mid-deal. Two of whatever is dealt become each player's **well**, so the number is not a hand size: deal 7 and you open holding 5 and play down to 3, deal 5 and you start at 3 straight away.
 
    | Players | Max cards to deal |
    |---|---|
@@ -28,7 +28,7 @@
 
 ## Basic Turn
 
-At the start of your turn your hand is topped up to **five** if it's below that — so a small deal opens short and catches up on your first turn. Then you must play one legal card from your hand face-up onto the discard pile (playing a legal card is **mandatory** if you have one — you may not voluntarily dip into your Well while a legal hand card is available). Add the card's value to the tally per the chart below. After playing, draw back up to your current hand-size cap from the draw pile. If the draw pile is empty, shuffle the discard pile (except the top/active card) into a new draw pile.
+At the start of your turn your hand is topped up to **three** if it's below that. Three is the sustaining hand: whatever you were dealt, you play down to three and hold there. Then you must play one legal card from your hand face-up onto the discard pile (playing a legal card is **mandatory** if you have one — you may not voluntarily dip into your Well while a legal hand card is available). Add the card's value to the tally per the chart below. After playing, draw back up to your current hand-size cap from the draw pile. If the draw pile is empty, shuffle the discard pile (except the top/active card) into a new draw pile.
 
 A card is only legal to play if it would keep the tally at or below 99 (barring the 9→Ace exception below) and it obeys any active suit-lock (from an 8).
 
@@ -78,7 +78,8 @@ If you hold two or more cards of the same rank you may play them all as one turn
 ## Poisonous Queens
 
 - The moment any player **draws** a queen from the draw pile, queens become poisonous for the rest of the game. Every other player currently holding a queen in hand must immediately move it into their own face-down **poison pile** (in front of them, out of hand).
-- From then on, whenever a player draws a queen, it goes straight to their poison pile instead of their hand, and their maximum hand size permanently drops by one — every queen costs a card, all the way down (5 → 4 → 3 → 2). Three queens down means a hand of two. The floor is 1, so a player can never be left unable to hold a card at all. This reduction is personal — it doesn't affect other players.
+- From then on, whenever a player draws a queen, it goes straight to their poison pile instead of their hand, and their maximum hand size drops by one — every queen costs a card, all the way down (3 → 2 → 1). The floor is 1, so a player can never be left unable to hold a card at all. Against a sustaining hand of three this bites fast: one queen and you hold two, two and you hold one for the rest of the game unless you clear them. This reduction is personal — it doesn't affect other players.
+- **Clearing three queens with a Snackoo gives that capacity back.** Otherwise the reward would be incoherent: three cards drawn into a hand that can't hold them.
 - If a player's poison pile reaches **three** queens, they may declare **"Snackoo!"** (see below) to clear it.
 
 ## Snackoo

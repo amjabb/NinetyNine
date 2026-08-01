@@ -22,6 +22,10 @@ struct TallyGauge: View {
 
     @Environment(\.motion) private var motion
     @State private var shimmerPhase: Double = 0
+    /// Drives the travelling direction arrow. Its own phase, not the shimmer's:
+    /// the shimmer breathes in and out, and an arrow that ran backwards half the
+    /// time would say the opposite of what it means.
+    @State private var arrowPhase: Double = 0
 
     private var pressure: Double {
         tally > 0 ? min(1, Double(tally) / 99.0) : 0
@@ -45,6 +49,17 @@ struct TallyGauge: View {
                 // Track.
                 GaugeArc(startAngle: startAngle, sweep: sweep, progress: 1)
                     .stroke(Color.black.opacity(0.45), style: .init(lineWidth: ringWidth, lineCap: .round))
+
+                // An arrowhead riding the ring, pointing the way play is going.
+                // The static text says which; this says it without being read.
+                DirectionArrow(
+                    startAngle: startAngle,
+                    sweep: sweep,
+                    isClockwise: isClockwise,
+                    phase: arrowPhase
+                )
+                .stroke(Palette.brass.opacity(0.75), style: .init(lineWidth: ringWidth * 0.34, lineCap: .round))
+                .frame(width: side, height: side)
 
                 // Tick marks every 10, longer at 50, longest at 99.
                 GaugeTicks(startAngle: startAngle, sweep: sweep)
@@ -108,8 +123,25 @@ struct TallyGauge: View {
                 }
             }
             .onAppear {
-                guard let ambient = motion.ambient(Motion.breathe(1.1)) else { return }
-                withAnimation(ambient) { shimmerPhase = 1 }
+                if let ambient = motion.ambient(Motion.breathe(1.1)) {
+                    withAnimation(ambient) { shimmerPhase = 1 }
+                }
+                // One way, forever. Reduce Motion leaves it parked, which is
+                // fine — the wording underneath still says which way play goes.
+                if let travel = motion.ambient(
+                    .linear(duration: 3.4).repeatForever(autoreverses: false)
+                ) {
+                    withAnimation(travel) { arrowPhase = 1 }
+                }
+            }
+            .onChange(of: isClockwise) { _, _ in
+                // Restart so the reversal reads as a reversal rather than the
+                // arrow continuing on its way.
+                arrowPhase = 0
+                guard let travel = motion.ambient(
+                    .linear(duration: 3.4).repeatForever(autoreverses: false)
+                ) else { return }
+                withAnimation(travel) { arrowPhase = 1 }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -163,7 +195,31 @@ struct TallyGauge: View {
                     .font(.system(size: side * 0.052, weight: .semibold))
                     .foregroundStyle(Palette.negative.opacity(0.9))
             }
+
+            directionLabel(side: side)
+                .padding(.top, side * 0.03)
         }
+    }
+
+    /// Which way play is going, inside the gauge.
+    ///
+    /// It used to be a 40pt "CW" in the top corner, which is both the least
+    /// looked-at part of the screen and the least legible way to say it. Whose
+    /// turn is next is one of the two things that decide a play — the other is
+    /// the headroom directly above it — so it belongs in the middle, next to the
+    /// number everybody is already staring at.
+    private func directionLabel(side: CGFloat) -> some View {
+        HStack(spacing: side * 0.022) {
+            Image(systemName: isClockwise ? "arrow.turn.down.right" : "arrow.turn.down.left")
+                .font(.system(size: side * 0.05, weight: .bold))
+            Text(isClockwise ? "CLOCKWISE" : "COUNTER-CLOCKWISE")
+                .font(.system(size: side * 0.042, weight: .heavy))
+                .tracking(side * 0.008)
+        }
+        .foregroundStyle(Palette.brass)
+        .contentTransition(.symbolEffect(.replace))
+        .animation(motion.animation(Motion.panel), value: isClockwise)
+        .accessibilityHidden(true)
     }
 
     private var headroomText: String {
@@ -205,6 +261,48 @@ private struct GaugeArc: Shape {
             startAngle: .degrees(startAngle),
             endAngle: .degrees(startAngle + sweep * progress),
             clockwise: sweep < 0
+        )
+        return path
+    }
+}
+
+/// A short chevron riding the gauge's ring, pointing the way play is going.
+///
+/// It travels rather than sitting still: a static arrow is read once and then
+/// stops being noticed, and direction is exactly the thing players stop noticing
+/// right up until a 4 catches them out.
+private struct DirectionArrow: Shape {
+    var startAngle: Double
+    var sweep: Double
+    var isClockwise: Bool
+    /// 0...1, driven by the same ambient phase as the ring's shimmer.
+    var phase: Double
+
+    var animatableData: Double {
+        get { phase }
+        set { phase = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let side = min(rect.width, rect.height)
+        let radius = side / 2 - side * 0.0375
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+
+        // Travel the arc, entering at one end and leaving at the other.
+        let travel = phase.truncatingRemainder(dividingBy: 1)
+        let along = isClockwise ? travel : 1 - travel
+        let head = startAngle + sweep * along
+        // The chevron is a short arc segment: long enough to read as motion,
+        // short enough not to be mistaken for the tally's own fill.
+        let tail = head - (isClockwise ? 9 : -9)
+
+        path.addArc(
+            center: centre,
+            radius: radius,
+            startAngle: .degrees(min(head, tail)),
+            endAngle: .degrees(max(head, tail)),
+            clockwise: false
         )
         return path
     }

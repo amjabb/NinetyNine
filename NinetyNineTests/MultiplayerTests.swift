@@ -129,14 +129,16 @@ final class RedactionTests: XCTestCase {
 
         // Dealt six, two banked as the well, so four in hand — except whoever
         // leads, who is topped up to the cap of five before they act.
-        let expected = engine.state.currentPlayer.id == "a" ? Rules.sustainingHandCap : 4
+        // Dealt six, banked two — four each, which is already above the
+        // sustaining cap, so the leader's top-up changes nothing.
+        let expected = 4
         XCTAssertEqual(view.yourHand.count, expected)
         XCTAssertEqual(view.opponents.count, 2)
         XCTAssertEqual(view.seatingOrder, ["a", "b", "c"])
         XCTAssertEqual(view.currentPlayerID, engine.state.currentPlayer.id)
         XCTAssertEqual(view.tally, 0)
         for opponent in view.opponents {
-            let theirs = opponent.id == engine.state.currentPlayer.id ? Rules.sustainingHandCap : 4
+            let theirs = 4
             XCTAssertEqual(
                 opponent.handCount, theirs,
                 "You can count an opponent's cards across a table"

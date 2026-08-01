@@ -193,7 +193,7 @@ struct RuleSection: Identifiable {
             glyph: "square.stack.3d.down.right",
             points: [
                 "Everything the dealer deals goes to your hand — then you bury two of it face down as your well.",
-                "Deal 7 and you open holding 5. Deal 5 and you open holding 3, and draw up to five on your first turn.",
+                "Deal 7 and you open holding 5, playing down to 3. Deal 5 and you start at 3 straight away.",
                 "You won't see those two again until you're stuck with nothing legal in hand.",
                 "The cards that make the best well are the ones you'd want in hand — a Queen is never blocked, a Jack can't bust you. That's the whole decision.",
                 "A small deal is a thin choice: at three cards you bank two of three.",
@@ -204,7 +204,7 @@ struct RuleSection: Identifiable {
             title: "Taking a turn",
             glyph: "arrow.right.circle",
             points: [
-                "Your hand is topped up to five at the start of your turn if it's short.",
+                "Your hand is topped up to three at the start of your turn if it's short. Three is all you ever hold.",
                 "Play one legal card from your hand, face up, onto the pile. If you have a legal card, playing it is mandatory.",
                 "Afterwards you draw back up to your hand limit.",
                 "Cards you can't legally play are dimmed. Tap one to see why.",
@@ -265,7 +265,7 @@ struct RuleSection: Identifiable {
                 "A Queen is wild — she copies the value and ability of any card you name.",
                 "The moment anybody draws a Queen from the deck, queens turn poisonous for the rest of the game.",
                 "Every Queen still held in hand is immediately exiled to its owner's poison pile.",
-                "Each poisoned Queen permanently costs that player one card of hand limit — three of them down means a hand of two.",
+                "Each poisoned Queen costs that player one card of hand limit. From a hand of three that bites fast: one Queen and you hold two, two Queens and you hold one.",
             ]
         ),
         RuleSection(

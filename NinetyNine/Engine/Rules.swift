@@ -141,19 +141,27 @@ enum Rules {
     /// dealt.
     ///
     /// The deal size is a *starting* position, not a standing allowance: deal
-    /// seven and you play down to five, then hold at five. The rulebook confirms
-    /// it — poisoned queens drop the cap "5 → 4 → 3", a sequence that only makes
-    /// sense if the base is five.
+    /// seven and you play down to three, then hold at three.
+    ///
+    /// Three, not five, and the difference is the whole texture of the game — a
+    /// hand of three is barely a hand. There is rarely a safe card *and* a brake
+    /// *and* an out, so most turns are a choice between bad options rather than
+    /// a search for the best one, and the tally climbs faster because nobody is
+    /// sitting on a 10 waiting for the right moment.
     ///
     /// Bonus cards (a survived well) may push a hand above this; refill never
     /// removes cards, it only tops up.
-    static let sustainingHandCap = 5
+    static let sustainingHandCap = 3
 
     /// How many of a kind make a Snackoo.
     static let snackooSize = 3
 
     /// A poisoned queen costs one card of capacity while it sits in the poison
-    /// pile. Clearing three of them with a Snackoo gives that capacity back. Three queens
+    /// pile. Clearing three of them with a Snackoo gives that capacity back.
+    ///
+    /// Against a sustaining hand of three this bites hard and deliberately: one
+    /// queen and you're down to two, two queens and you're on one for the rest
+    /// of the game unless you can clear them. Three queens
     /// down means a hand of two — the floor only exists so a player can never be
     /// left unable to hold a card at all.
     static let poisonedHandCapFloor = 1
@@ -166,8 +174,8 @@ enum Rules {
 
     /// The dealer names a number of cards to deal. **Two of them become the
     /// well**, so the opening hand is `cardsDealt - 2` — deal 7 and you start
-    /// with five in hand, deal 5 and you start with three and draw up to five on
-    /// your first turn.
+    /// with five and play down to three, deal 5 and you start at the sustaining
+    /// three straight away.
     ///
     /// This is why the number isn't called "hand size": it stopped being one.
     static func maxCardsDealt(forPlayerCount count: Int) -> Int {

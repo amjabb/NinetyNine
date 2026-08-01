@@ -48,9 +48,13 @@ it — and when that turn comes you can shake the phone to shuffle the two, the
 way you would at a table.
 
 So the dealer's number isn't a hand size any more, it's how many cards to deal.
-Deal seven and you start holding five. Deal five and you start holding three and
-draw up to five on your first turn. Deal three and you're burying two of three —
-no choice at all, which is its own kind of cruelty.
+Deal seven and you start holding five and play down to three. Deal five and
+you're at three from the off. Deal three and you're burying two of three — no
+choice at all, which is its own kind of cruelty.
+
+Three cards is barely a hand. There is rarely a safe card and a brake and an out
+all at once, so most turns are a choice between bad options rather than a hunt
+for the best one.
 
 ALSO NEW SINCE 1.0
 
@@ -67,7 +71,7 @@ ALSO NEW SINCE 1.0
 
 RULES, CORRECTED
 
-• Your hand settles to five however many you were dealt.
+• Your hand settles to three however many you were dealt.
 • The dealer chooses the deal before every game, rematches included.
 • You choose which of your two well cards to turn over.
 • A well card that completes three of a kind offers you the Snackoo before

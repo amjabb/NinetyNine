@@ -89,7 +89,9 @@ final class MatchCoordinatorTests: XCTestCase {
         // opening draw can turn up a queen and poison the table before anyone
         // plays, which permanently lowers the cap of whoever was holding one.
         XCTAssertEqual(view.currentPlayerID, "h0", "The local player should lead")
-        XCTAssertEqual(view.yourHand.count, view.yourHandCap)
+        // Dealt six, banked two: four in hand, already over the sustaining cap,
+        // so the top-up leaves it alone.
+        XCTAssertGreaterThanOrEqual(view.yourHand.count, view.yourHandCap)
         XCTAssertLessThanOrEqual(view.yourHandCap, Rules.sustainingHandCap)
         XCTAssertEqual(view.opponents.count, 2)
         XCTAssertEqual(view.seatingOrder.count, 3)

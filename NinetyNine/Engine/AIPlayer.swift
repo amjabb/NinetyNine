@@ -319,8 +319,8 @@ struct AIPlayer {
 
     /// How many cards this opponent deals when it wins the deal.
     ///
-    /// The number buys two things now, and the second is the interesting one:
-    /// the opening hand (`dealt - 2`, which decays to the cap of five anyway),
+    /// The number buys two things, and the second is the interesting one: the
+    /// opening hand (`dealt - 2`, which decays to the sustaining three anyway),
     /// and **how much choice everyone gets over their well**. Deal three and a
     /// player banks two of three — no choice at all. Deal nine and they pick the
     /// two they actually want.
@@ -333,9 +333,9 @@ struct AIPlayer {
         let high = max(low, maxCardsDealt)
         let wanted: Int
         switch difficulty {
-        case .casual: wanted = 9    // a hand of seven and a real pick
-        case .sharp: wanted = 7     // a full hand of five
-        case .ruthless: wanted = 5  // a hand of three, and a thin choice
+        case .casual: wanted = 9    // a cushion of seven, and a real pick
+        case .sharp: wanted = 7     // five, decaying to the sustaining three
+        case .ruthless: wanted = 5  // straight to three, and a thin choice
         }
         return min(high, max(low, wanted))
     }

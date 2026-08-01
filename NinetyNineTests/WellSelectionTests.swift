@@ -115,7 +115,7 @@ final class WellSelectionTests: XCTestCase {
     func testASmallDealOpensShortAndIsToppedUpOnTheFirstTurn() throws {
         let engine = try dealt(5)
         for id in ["a", "b", "c"] {
-            XCTAssertEqual(try XCTUnwrap(engine.state.player(id: id)).hand.count, 5)
+            XCTAssertEqual(try XCTUnwrap(engine.state.player(id: id)).hand.count, 5)  // dealt 7, banked 2
             try engine.chooseWell(slots: [0, 1], by: id)
         }
 

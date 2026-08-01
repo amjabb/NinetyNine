@@ -39,8 +39,8 @@ final class HandCapTests: XCTestCase {
             let leader = engine.state.currentPlayer.id
             for player in engine.state.players {
                 XCTAssertEqual(
-                    player.handCap, 5,
-                    "Dealt \(cardsDealt) — cap should still be 5"
+                    player.handCap, Rules.sustainingHandCap,
+                    "Dealt \(cardsDealt) — the cap is the sustaining hand, not the deal"
                 )
                 // Two of the deal went to the well. Whoever leads has already
                 // been topped up to the cap; nobody else has yet.
@@ -60,6 +60,7 @@ final class HandCapTests: XCTestCase {
         let engine = try engine(cardsDealt: 9)
         let me = engine.state.currentPlayer.id
         XCTAssertEqual(engine.state.player(id: me)?.hand.count, 7, "Nine dealt, two banked")
+        XCTAssertEqual(Rules.sustainingHandCap, 3, "This test is about decaying to the cap")
 
         // Play until the hand reaches the cap, then confirm it stops falling.
         var counts: [Int] = []
@@ -99,7 +100,7 @@ final class HandCapTests: XCTestCase {
         )
     }
 
-    func testRefillTopsUpToFiveButNeverRemovesCards() throws {
+    func testRefillTopsUpToTheCapButNeverRemovesCards() throws {
         let engine = try engine(cardsDealt: 7)
         let me = engine.state.currentPlayer.id
         // Play one card; the refill should bring it straight back to five.
@@ -108,19 +109,22 @@ final class HandCapTests: XCTestCase {
         )
         let declaration = try XCTUnwrap(Rules.legalDeclarations(for: playable, in: engine.state).first)
         try engine.play(cardID: playable.id, by: me, declaration: declaration)
-        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 5)
+        // Dealt seven, banked two, so five in hand and above the cap already —
+        // refill tops up, it never takes cards away.
+        XCTAssertEqual(engine.state.player(id: me)?.hand.count, 4)
     }
 
-    /// Each poisoned queen costs a card of capacity, all the way down: three
-    /// queens down means a hand of two. The floor exists only so a player can
-    /// never be left unable to hold a card at all.
+    /// Each poisoned queen costs a card of capacity, all the way down. Against
+    /// a sustaining hand of three that bites fast — one queen and you hold two,
+    /// two and you hold one — and the floor exists only so a player can never be
+    /// left unable to hold a card at all.
     func testEachPoisonedQueenCostsACardOfCapacity() throws {
         var state = GameState(
             players: [PlayerState(id: "a", name: "A", kind: .human, handCap: Rules.sustainingHandCap)],
             currentPlayerIndex: 0, dealerID: "a", cardsDealt: 5
         )
-        XCTAssertEqual(state.players[0].handCap, 5)
-        for expected in [4, 3, 2, 1, 1] {
+        XCTAssertEqual(state.players[0].handCap, Rules.sustainingHandCap)
+        for expected in [2, 1, 1, 1] {
             state.players[0].handCap = max(Rules.poisonedHandCapFloor, state.players[0].handCap - 1)
             XCTAssertEqual(state.players[0].handCap, expected)
         }
@@ -215,7 +219,14 @@ final class PoisonedQueenTests: XCTestCase {
 
         try engine.declareSnackoo(by: "a", kind: .threeQueens)
 
-        XCTAssertTrue(engine.state.players[seat].poisonPile.isEmpty, "The pile should clear")
+        // The three that were there are gone. The pile isn't necessarily *empty*
+        // — the three replacement cards come off the deck, and a queen among
+        // them is poisonous too and lands straight back in the pile.
+        let cleared: Set<Int> = [400, 401, 402]
+        XCTAssertTrue(
+            Set(engine.state.players[seat].poisonPile.map(\.id)).isDisjoint(with: cleared),
+            "The three queens that were Snackoo'd should be gone"
+        )
         XCTAssertEqual(
             engine.state.players[seat].hand.count, before + 3,
             "Snackoo draws three replacements"
@@ -908,7 +919,10 @@ final class QueenSnackooRestoresCapTests: XCTestCase {
     func testClearingThreeQueensPutsTheCapBack() throws {
         let (engine, id) = try engineWithPoisonedQueens(3)
         let seat = try XCTUnwrap(engine.state.index(of: id))
-        XCTAssertEqual(engine.state.players[seat].handCap, 2, "Three queens down means two")
+        XCTAssertEqual(
+            engine.state.players[seat].handCap, Rules.poisonedHandCapFloor,
+            "Three queens against a hand of three takes you to the floor"
+        )
 
         let events = try engine.declareSnackoo(by: id, kind: .threeQueens)
 
@@ -923,8 +937,10 @@ final class QueenSnackooRestoresCapTests: XCTestCase {
         XCTAssertTrue(engine.state.players[seat].poisonPile.isEmpty)
     }
 
-    /// The three cards it draws have to fit in the hand it leaves you with.
-    func testTheThreeCardsDrawnFitTheRestoredCap() throws {
+    /// The three cards it draws are a bonus, like surviving the well: they may
+    /// leave a hand temporarily over its cap, which then decays as it's played.
+    /// What must not happen is drawing into a cap that was never given back.
+    func testTheThreeCardsDrawnArriveOnTopOfARestoredCap() throws {
         let (engine, id) = try engineWithPoisonedQueens(3)
         let seat = try XCTUnwrap(engine.state.index(of: id))
         var state = engine.state
@@ -934,11 +950,11 @@ final class QueenSnackooRestoresCapTests: XCTestCase {
         try engine.declareSnackoo(by: id, kind: .threeQueens)
 
         let after = try XCTUnwrap(engine.state.player(id: id))
-        XCTAssertLessThanOrEqual(
-            after.hand.count, after.handCap,
-            "A Snackoo must not leave a hand over its own limit"
+        XCTAssertEqual(
+            after.handCap, Rules.sustainingHandCap,
+            "The capacity the queens cost has to come back"
         )
-        XCTAssertGreaterThan(after.hand.count, 1, "It should actually have drawn")
+        XCTAssertEqual(after.hand.count, 4, "One held, three drawn")
     }
 
     /// A fourth queen still costs a card afterwards — clearing three doesn't

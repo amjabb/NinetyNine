@@ -239,7 +239,10 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("Names").labelStyle()
             VStack(spacing: 8) {
-                ForEach(0..<settings.localPlayerCount, id: \.self) { index in
+                // Array-wrapped for the same reason as everywhere else: the
+                // bare range initialiser caches its count, and this one changes
+                // every time the player adjusts the table size.
+                ForEach(Array(0..<settings.localPlayerCount), id: \.self) { index in
                     HStack(spacing: 10) {
                         Text("\(index + 1)")
                             .font(Typography.counter(12, weight: .heavy))

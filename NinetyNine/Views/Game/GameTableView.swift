@@ -94,7 +94,10 @@ struct GameTableView: View {
 
             Spacer()
 
-            DirectionBadge(isClockwise: (viewModel.view?.direction ?? 1) == 1)
+            // The direction used to live here, in the least looked-at corner of
+            // the screen. It's inside the gauge now, next to the number people
+            // are already reading — this keeps the header balanced.
+            Color.clear.frame(width: 40, height: 1)
         }
         .padding(.top, 2)
         .frame(height: 44)
@@ -497,23 +500,6 @@ struct GameTableView: View {
 }
 
 // MARK: - Small components
-
-private struct DirectionBadge: View {
-    let isClockwise: Bool
-
-    var body: some View {
-        VStack(spacing: 1) {
-            Image(systemName: isClockwise ? "arrow.clockwise" : "arrow.counterclockwise")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Palette.brassLight)
-            Text(isClockwise ? "CW" : "CCW").labelStyle(Palette.ivoryFaint)
-        }
-        .frame(width: 40)
-        .contentTransition(.symbolEffect(.replace))
-        .animation(Motion.panel, value: isClockwise)
-        .accessibilityLabel(isClockwise ? "Play is clockwise" : "Play is counter-clockwise")
-    }
-}
 
 private struct WellPips: View {
     let remaining: Int

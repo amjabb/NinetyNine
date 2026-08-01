@@ -51,7 +51,10 @@ struct OpponentSeatView: View {
         ZStack {
             // Fanned card backs behind the avatar, count-accurate up to five —
             // an instant read on how loaded they are.
-            ForEach(0..<min(player.handCount, 5), id: \.self) { index in
+            // Array-wrapped: a bare range is the constant-count initialiser and
+            // caches the first value it sees, so a fan drawn at four backs would
+            // still show four after the hand changed.
+            ForEach(Array(0..<min(player.handCount, 5)), id: \.self) { index in
                 CardBackView()
                     .frame(width: ringSize * 0.46)
                     .rotationEffect(.degrees(Double(index - 2) * 9))

@@ -103,7 +103,11 @@ struct WellRevealOverlay: View {
             // Having the game pick made the tensest moment in the game something
             // that happened *to* them.
             HStack(spacing: 22) {
-                ForEach(0..<slots, id: \.self) { slot in
+                // `Array(0..<slots)`, not `0..<slots`: the range initialiser is
+                // for *constant* counts and caches the one it first saw. With a
+                // bare range this kept drawing two face-down cards after the
+                // well was down to one.
+                ForEach(Array(0..<slots), id: \.self) { slot in
                     Button {
                         Haptics.shared.play(.cardFlick)
                         onChoose(slot)
