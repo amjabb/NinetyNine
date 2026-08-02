@@ -187,7 +187,7 @@ final class WatchingTheWellTests: XCTestCase {
         ])
 
         XCTAssertTrue(
-            seen.contains { if case .rolling(let id) = $0 { return id == "ai0" }; return false },
+            seen.contains { if case .rolling(let id, _) = $0 { return id == "ai0" }; return false },
             "The table should see them reach for it: \(seen)"
         )
         XCTAssertTrue(
@@ -333,5 +333,85 @@ final class WellCardIsActuallyPlayedTests: XCTestCase {
         let view = try XCTUnwrap(model.view)
         XCTAssertNil(view.pendingWell, "A survived well card must not be left dangling")
         XCTAssertEqual(model.wellReveal, .idle, "And the overlay must hand the table back")
+    }
+}
+
+// MARK: - The well shows what's actually in it
+
+/// Reported twice, in two different screens. The pick shows one card when one
+/// is left; then the draw animation came up with two before flipping.
+///
+/// Both were the same shape of mistake — a count that was written down once and
+/// never asked again — and the second survived the first fix because the phases
+/// are separate views with separate assumptions.
+@MainActor
+final class WellCardCountTests: XCTestCase {
+
+    private func table(well: [Card]) async throws -> GameViewModel {
+        let model = GameViewModel.solo(
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 7,
+            playerName: "You", dealerID: nil, seed: 1
+        )
+        await model.begin()
+        var guardCount = 0
+        while model.view?.youAreChoosingYourWell == true && guardCount < 8 {
+            guardCount += 1
+            model.chooseWell(slots: [0, 1])
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        await model._settleForTesting()
+        // Nothing legal in hand, so the well is the only way on.
+        model._forceWellForTesting(well, hand: [Card(id: 880, rank: .king, suit: .spades)], tally: 99)
+        return model
+    }
+
+    func testTheChoiceOffersOnlyTheCardsThatAreThere() async throws {
+        let model = try await table(well: [Card(id: 881, rank: .four, suit: .hearts)])
+        model.useWell()
+
+        guard case .choosing(_, let slots) = model.wellReveal else {
+            XCTFail("Expected the pick prompt, got \(model.wellReveal)")
+            return
+        }
+        XCTAssertEqual(slots, 1, "One card left means one card offered")
+    }
+
+    /// The one that was still wrong: the draw animation.
+    func testTheDrawAnimationShowsOnlyTheCardsThatAreThere() async throws {
+        let model = try await table(well: [Card(id: 882, rank: .four, suit: .hearts)])
+        let started = Task { await model._drawWellForTesting(slot: 0) }
+
+        var sawRolling = false
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if case .rolling(_, let slots) = model.wellReveal {
+                sawRolling = true
+                XCTAssertEqual(
+                    slots, 1,
+                    "A spent well was animating two cards — the game appeared to invent one"
+                )
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(sawRolling, "Never saw the draw animation")
+        await started.value
+    }
+
+    func testAFullWellStillAnimatesBoth() async throws {
+        let model = try await table(well: [
+            Card(id: 883, rank: .four, suit: .hearts),
+            Card(id: 884, rank: .three, suit: .clubs),
+        ])
+        let started = Task { await model._drawWellForTesting(slot: 0) }
+
+        var seen: Int?
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if case .rolling(_, let slots) = model.wellReveal { seen = slots; break }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(seen, 2)
+        await started.value
     }
 }

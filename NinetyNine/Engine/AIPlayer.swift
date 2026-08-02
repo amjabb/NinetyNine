@@ -216,6 +216,41 @@ struct AIPlayer {
             score += Double(lookaheadBonus(candidate, player: player, state: state))
         }
 
+        // Merciless plays at the person receiving the board rather than at the
+        // board. Everything above is about what a card does *here*; this is
+        // about what it does to whoever has to answer it, which is what the
+        // game is actually decided by.
+        if difficulty.readsTheTable {
+            let pressure = pressureOnNextPlayer(after: candidate, player: player, state: state)
+            let safety = ownSafety(after: candidate, player: player, state: state)
+
+            // Strangling the next player is worth more than any tally
+            // consideration — being unable to play is the only way to lose.
+            score += pressure * 120
+
+            // But not at the cost of walking into it ourselves next turn.
+            score += safety * 34
+            if safety == 0 { score -= 45 }
+
+            // Keep one universal out in reserve. With a hand of three, holding
+            // a card that plays from almost anywhere is the difference between
+            // being squeezed and being finished.
+            let keptOuts = player.hand
+                .filter { $0.id != candidate.card.id }
+                .filter { $0.rank == .queen || $0.rank == .ten || $0.rank == .jack || $0.rank == .four }
+                .count
+            if keptOuts == 0 && player.hand.count > 1 { score -= 12 }
+
+            // An 8 hands the next player the answer to it: after a lock, any 8
+            // beats it and takes the lock away. Only worth doing while 8s are
+            // scarce enough that they probably haven't got one.
+            if rank == .eight {
+                let eightsGone = state.discardPile.filter { $0.rank == .eight }.count
+                    + player.hand.filter { $0.rank == .eight && $0.id != candidate.card.id }.count
+                score += Double(eightsGone) * 6 - 6
+            }
+        }
+
         return score
     }
 
@@ -264,6 +299,13 @@ struct AIPlayer {
             // problem, so it accepts worse odds when the squeeze is on.
             let squeezed = state.tally > 85 || state.suitLock != nil
             return odds > (squeezed ? 0.45 : 0.6)
+        case .merciless:
+            // Compares the two deaths rather than picking a threshold. A skip
+            // costs two plays next turn, which on a board this tight is often
+            // worse than the coin flip — so the bar moves with how survivable
+            // the *next* turn looks, not with how the tally feels.
+            let debtSurvival = survivalAfterSkipping(player: player, state: state)
+            return odds > debtSurvival
         }
     }
 
@@ -277,6 +319,115 @@ struct AIPlayer {
         // Hold the trio if the hand is already flexible and the deck is thin.
         if playableNow >= 4 && state.effectiveDrawCount < 8 { return nil }
         return rank
+    }
+
+    // MARK: - Reading the table
+
+    /// Cards this player cannot account for: not in their hand, not on the
+    /// discard pile, not in their own poison pile.
+    ///
+    /// Deliberately not the engine's draw pile. Everything here is knowable by
+    /// somebody sitting at the table with a good memory, which is the whole
+    /// point — an opponent that reads the actual deck is not a better player,
+    /// it's a cheat, and it would feel like one.
+    private func unseenCards(for player: PlayerState, state: GameState) -> [Card] {
+        var accounted = Set(player.hand.map(\.id))
+        accounted.formUnion(state.discardPile.map(\.id))
+        accounted.formUnion(player.poisonPile.map(\.id))
+        return Deck.standard().filter { !accounted.contains($0.id) }
+    }
+
+    /// Roughly how likely the player after us is to be stuck in `future`.
+    ///
+    /// This is the thing the other tiers never ask. 99 is not won by playing
+    /// well, it's won by being the last one able to play at all — so the value
+    /// of a move is mostly what it does to the person receiving it. Their hand
+    /// is hidden, but its *size* is public, and so is everything already played;
+    /// the chance that none of their cards is legal is what's left.
+    private func pressureOnNextPlayer(
+        after candidate: Candidate, player: PlayerState, state: GameState
+    ) -> Double {
+        guard let next = nextActivePlayer(after: player, in: state, reversing: candidate.effect.reversesDirection)
+        else { return 0 }
+
+        let future = projected(candidate, by: player, from: state)
+        let pool = unseenCards(for: player, state: state)
+        guard !pool.isEmpty else { return 0 }
+
+        let dead = pool.filter { !Rules.isPlayable($0, in: future) }.count
+        let deadShare = Double(dead) / Double(pool.count)
+
+        // Their whole hand has to be dead, so the share compounds. A player
+        // holding one card is far easier to strand than one holding three,
+        // which is exactly why the hand count is worth watching.
+        // Their *count*, never their cards — the table shows everyone how many
+        // each player holds, so this is fair game where reading the hand itself
+        // would not be.
+        let held = max(1, next.hand.count)
+        var chance = pow(deadShare, Double(held))
+
+        // A player who skipped owes two plays: they have to find two legal
+        // cards, not one. Squeeze them now or never.
+        if next.owesExtraPlay { chance = min(1, chance * 1.6) }
+        // A spent well means being stuck is fatal rather than merely expensive.
+        if next.well.isEmpty { chance = min(1, chance * 1.35) }
+        return chance
+    }
+
+    /// How survivable our own next turn looks, judged the same way — against
+    /// what we'd be holding, not against what we hold now.
+    private func ownSafety(
+        after candidate: Candidate, player: PlayerState, state: GameState
+    ) -> Double {
+        let future = projected(candidate, by: player, from: state)
+        let remaining = player.hand.filter { $0.id != candidate.card.id }
+        guard !remaining.isEmpty else { return 1 }
+        let alive = remaining.filter { Rules.isPlayable($0, in: future) }.count
+        return Double(alive) / Double(remaining.count)
+    }
+
+    /// The board as it would stand after this play.
+    private func projected(_ candidate: Candidate, by player: PlayerState, from state: GameState) -> GameState {
+        var future = state
+        future.tally = candidate.effect.newTally
+        future.forcedNegativeNext = candidate.effect.setsForcedNegativeNext
+        future.pendingNineSuit = candidate.effect.isNine ? candidate.card.suit : nil
+        future.discardPile.append(candidate.card)
+        future.topPlayedAsEight = candidate.effect.effectiveRank == .eight
+        if let locked = candidate.effect.locksSuit {
+            future.suitLock = SuitLock(suit: locked, setByPlayerID: player.id)
+        } else if candidate.effect.liftsSuitLock {
+            future.suitLock = nil
+        }
+        return future
+    }
+
+    private func nextActivePlayer(
+        after player: PlayerState, in state: GameState, reversing: Bool
+    ) -> PlayerState? {
+        guard let start = state.index(of: player.id) else { return nil }
+        let step = (reversing ? -state.direction : state.direction) >= 0 ? 1 : -1
+        let count = state.players.count
+        var index = start
+        for _ in 0..<count {
+            index = ((index + step) % count + count) % count
+            if !state.players[index].isEliminated && state.players[index].id != player.id {
+                return state.players[index]
+            }
+        }
+        return nil
+    }
+
+    /// What our odds look like if we skip instead: two plays owed next turn,
+    /// against whatever the board becomes.
+    private func survivalAfterSkipping(player: PlayerState, state: GameState) -> Double {
+        // Two legal cards needed rather than one, so the bar for taking the
+        // well instead is lower the tighter the board is.
+        let pool = unseenCards(for: player, state: state)
+        guard !pool.isEmpty else { return 0.5 }
+        let live = Double(pool.filter { Rules.isPlayable($0, in: state) }.count) / Double(pool.count)
+        // Rough: needing two in a row from a hand this size.
+        return min(0.75, max(0.3, live * live + 0.25))
     }
 
     // MARK: - Narration
@@ -312,6 +463,8 @@ struct AIPlayer {
         case .ruthless:                                             // from the middle
             let start = max(0, (dealtCount - size) / 2)
             return Array(start..<(start + size))
+        case .merciless:                                            // off the end
+            return Array((dealtCount - size)..<dealtCount)
         }
     }
 
@@ -336,6 +489,7 @@ struct AIPlayer {
         case .casual: wanted = 9    // a cushion of seven, and a real pick
         case .sharp: wanted = 7     // five, decaying to the sustaining three
         case .ruthless: wanted = 5  // straight to three, and a thin choice
+        case .merciless: wanted = 5 // same: starve the table of well choice
         }
         return min(high, max(low, wanted))
     }
@@ -349,6 +503,7 @@ struct AIPlayer {
         case .casual: return 0.45...0.85
         case .sharp: return 0.6...1.1
         case .ruthless: return 0.8...1.5
+        case .merciless: return 0.7...1.3
         }
     }
 }

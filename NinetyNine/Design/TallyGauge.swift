@@ -50,15 +50,20 @@ struct TallyGauge: View {
                 GaugeArc(startAngle: startAngle, sweep: sweep, progress: 1)
                     .stroke(Color.black.opacity(0.45), style: .init(lineWidth: ringWidth, lineCap: .round))
 
-                // An arrowhead riding the ring, pointing the way play is going.
-                // The static text says which; this says it without being read.
-                DirectionArrow(
+                // The ring itself points the way play is going.
+                DirectionRing(
                     startAngle: startAngle,
                     sweep: sweep,
                     isClockwise: isClockwise,
                     phase: arrowPhase
                 )
-                .stroke(Palette.brass.opacity(0.75), style: .init(lineWidth: ringWidth * 0.34, lineCap: .round))
+                .stroke(
+                    // Bright and reasonably heavy: at brass-on-brass they
+                    // disappeared into the ring they're drawn on.
+                    Palette.brassLight.opacity(0.95),
+                    style: .init(lineWidth: ringWidth * 0.34, lineCap: .round, lineJoin: .round)
+                )
+                .shadow(color: Palette.feltShadow.opacity(0.8), radius: 1)
                 .frame(width: side, height: side)
 
                 // Tick marks every 10, longer at 50, longest at 99.
@@ -161,10 +166,18 @@ struct TallyGauge: View {
                     .tracking(0.6)
                     .transition(.opacity)
             } else if let suitLock {
-                HStack(spacing: side * 0.022) {
+                HStack(spacing: side * 0.028) {
+                    // The pip carries the information; the word is just a label,
+                    // so the pip is the thing that gets bigger. At parity with
+                    // the text it was the hardest-working glyph on the table and
+                    // the easiest to miss.
                     SuitShape(suit: suitLock)
                         .fill(suitLock.isRed ? Palette.dangerGlow : Palette.ivory)
-                        .frame(width: side * 0.058, height: side * 0.058)
+                        .frame(width: side * 0.115, height: side * 0.115)
+                        .shadow(
+                            color: (suitLock.isRed ? Palette.dangerGlow : Palette.ivory).opacity(0.5),
+                            radius: side * 0.02
+                        )
                     Text("Locked")
                         .font(.system(size: side * 0.056, weight: .bold))
                         .foregroundStyle(Palette.ivory.opacity(0.85))
@@ -196,30 +209,7 @@ struct TallyGauge: View {
                     .foregroundStyle(Palette.negative.opacity(0.9))
             }
 
-            directionLabel(side: side)
-                .padding(.top, side * 0.03)
         }
-    }
-
-    /// Which way play is going, inside the gauge.
-    ///
-    /// It used to be a 40pt "CW" in the top corner, which is both the least
-    /// looked-at part of the screen and the least legible way to say it. Whose
-    /// turn is next is one of the two things that decide a play — the other is
-    /// the headroom directly above it — so it belongs in the middle, next to the
-    /// number everybody is already staring at.
-    private func directionLabel(side: CGFloat) -> some View {
-        HStack(spacing: side * 0.022) {
-            Image(systemName: isClockwise ? "arrow.turn.down.right" : "arrow.turn.down.left")
-                .font(.system(size: side * 0.05, weight: .bold))
-            Text(isClockwise ? "CLOCKWISE" : "COUNTER-CLOCKWISE")
-                .font(.system(size: side * 0.042, weight: .heavy))
-                .tracking(side * 0.008)
-        }
-        .foregroundStyle(Palette.brass)
-        .contentTransition(.symbolEffect(.replace))
-        .animation(motion.animation(Motion.panel), value: isClockwise)
-        .accessibilityHidden(true)
     }
 
     private var headroomText: String {
@@ -266,17 +256,26 @@ private struct GaugeArc: Shape {
     }
 }
 
-/// A short chevron riding the gauge's ring, pointing the way play is going.
+/// Arrowheads set into the gauge's ring, all pointing the way play is going.
 ///
-/// It travels rather than sitting still: a static arrow is read once and then
-/// stops being noticed, and direction is exactly the thing players stop noticing
-/// right up until a 4 catches them out.
-private struct DirectionArrow: Shape {
+/// Not a label and not one moving marker: the ring *becomes* directional, the
+/// way a one-way street is marked. Direction is a property of the circle the
+/// tally already lives on, so drawing it as part of that circle says it without
+/// anybody having to read a word — and it stays legible at a glance from across
+/// a table, which "CCW" in a corner never did.
+///
+/// Each head is a shallow V sitting on the arc: apex a little ahead along the
+/// direction of travel, tails a little behind and to either side of the ring's
+/// width. They drift slowly, because a still arrow is read once and then stops
+/// being seen.
+private struct DirectionRing: Shape {
     var startAngle: Double
     var sweep: Double
     var isClockwise: Bool
-    /// 0...1, driven by the same ambient phase as the ring's shimmer.
+    /// 0...1. Slides the whole set along the arc.
     var phase: Double
+    /// How many heads to space around the sweep.
+    var count: Int = 7
 
     var animatableData: Double {
         get { phase }
@@ -289,22 +288,39 @@ private struct DirectionArrow: Shape {
         let radius = side / 2 - side * 0.0375
         let centre = CGPoint(x: rect.midX, y: rect.midY)
 
-        // Travel the arc, entering at one end and leaving at the other.
-        let travel = phase.truncatingRemainder(dividingBy: 1)
-        let along = isClockwise ? travel : 1 - travel
-        let head = startAngle + sweep * along
-        // The chevron is a short arc segment: long enough to read as motion,
-        // short enough not to be mistaken for the tally's own fill.
-        let tail = head - (isClockwise ? 9 : -9)
+        // Half the angular length of one head, and how far its tails sit either
+        // side of the ring's centre line.
+        let halfSpan = 5.5
+        let spread = side * 0.019
+        let direction: Double = isClockwise ? 1 : -1
 
-        path.addArc(
-            center: centre,
-            radius: radius,
-            startAngle: .degrees(min(head, tail)),
-            endAngle: .degrees(max(head, tail)),
-            clockwise: false
-        )
+        let step = sweep / Double(count)
+        for index in 0..<count {
+            // Drift by one full gap, so the set flows without ever leaving a
+            // hole at either end of the arc.
+            let along = Double(index) * step + phase * step
+            let centreAngle = startAngle + along.truncatingRemainder(dividingBy: sweep)
+
+            let apex = centreAngle + halfSpan * direction
+            let tail = centreAngle - halfSpan * direction
+
+            let apexPoint = point(centre: centre, radius: radius, degrees: apex)
+            let outerTail = point(centre: centre, radius: radius + spread, degrees: tail)
+            let innerTail = point(centre: centre, radius: radius - spread, degrees: tail)
+
+            path.move(to: outerTail)
+            path.addLine(to: apexPoint)
+            path.addLine(to: innerTail)
+        }
         return path
+    }
+
+    private func point(centre: CGPoint, radius: CGFloat, degrees: Double) -> CGPoint {
+        let radians = degrees * Double.pi / 180
+        return CGPoint(
+            x: centre.x + radius * CGFloat(Foundation.cos(radians)),
+            y: centre.y + radius * CGFloat(Foundation.sin(radians))
+        )
     }
 }
 

@@ -67,8 +67,9 @@ If you hold two or more cards of the same rank you may play them all as one turn
 
 ### Zero and Negative Play
 
-- At the very start of the game, and **any time the tally returns to exactly 0** during play, the player whose turn it is may play a 10 to send the tally negative.
-- While the tally is negative: only 10s may push it further negative; a 9 is unplayable; and no card may jump the tally directly from negative to positive — a card must land **exactly on 0** first. Once the tally is exactly 0 again, it's treated like a fresh "first hand" and a 10 may be played to go negative again, or normal ascending play resumes.
+- **A 10 may drop the tally below zero from wherever it stands.** You don't have to be sitting on 0 to dive.
+- Climbing back out is the hard part: while the tally is negative, no card may jump it straight to a positive number — something has to land **exactly on 0** first. Only 10s push it further negative, and a 9 is unplayable down there.
+- The asymmetry is deliberate. Going down is cheap and coming back is not, so the negatives are a place you choose to go and then have to work your way out of.
 
 ### The 100 Exception
 

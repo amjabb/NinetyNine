@@ -99,7 +99,9 @@ final class GameViewModel: ObservableObject {
         /// over. Only shown for a human on this device — the AI has nothing to
         /// choose on.
         case choosing(playerID: String, slots: Int)
-        case rolling(playerID: String)
+        /// - Parameter slots: how many cards are still down there. A spent well
+        ///   has one, and drawing from it must not pretend otherwise.
+        case rolling(playerID: String, slots: Int)
         case revealed(card: Card, playable: Bool, playerID: String)
         /// Unplayable, but the third of its rank — the player is offered the
         /// Snackoo before being told they're out.
@@ -297,6 +299,7 @@ final class GameViewModel: ObservableObject {
         case .casual: return ["Pip", "Dot", "Bram", "Sunny", "Nell"]
         case .sharp: return ["Vale", "Corbin", "Ida", "Rook", "Marlow"]
         case .ruthless: return ["Mordant", "Sable", "Vex", "Grieve", "Thorne"]
+        case .merciless: return ["Calder", "Wrenn", "Halloway", "Marsh", "Crane"]
         }
     }
 
@@ -835,7 +838,9 @@ final class GameViewModel: ObservableObject {
     // MARK: - The well
 
     private func runWell(for playerID: String, slot: Int) async {
-        withAnimation(Motion.drama) { wellReveal = .rolling(playerID: playerID) }
+        withAnimation(Motion.drama) {
+            wellReveal = .rolling(playerID: playerID, slots: view?.yourWellCount ?? 1)
+        }
         Haptics.shared.play(.wellReveal)
         SoundEngine.shared.play(.wellRoll)
         try? await Task.sleep(for: .milliseconds(950))
@@ -1161,7 +1166,11 @@ final class GameViewModel: ObservableObject {
             //
             // The whole table watches now, at the same pace the actor sees it.
             case .wellRevealed(let card, let by, let playable) where by != viewingPlayerID:
-                withAnimation(Motion.drama) { wellReveal = .rolling(playerID: by) }
+                withAnimation(Motion.drama) {
+                    // Their well, so its size comes from the public count.
+                    let left = view?.opponents.first { $0.id == by }?.wellCount ?? 1
+                    wellReveal = .rolling(playerID: by, slots: left)
+                }
                 Haptics.shared.play(.wellReveal)
                 SoundEngine.shared.play(.wellRoll, volume: 0.75)
                 try? await Task.sleep(for: .milliseconds(850))

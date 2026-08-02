@@ -139,18 +139,22 @@ struct WellRevealOverlay: View {
                 Task { await runShuffleChoreography() }
             }
 
-        case .rolling:
-            // Two face-down cards trading places — you can see there's a choice
-            // being made, but not what it is.
+        case .rolling(_, let slots):
+            // Face-down cards being turned over — you can see something is being
+            // decided, but not what. However many are actually down there: a
+            // spent well holds one, and drawing from it was showing two, which
+            // read as the game inventing a card.
             HStack(spacing: 18) {
-                CardBackView(isHighlighted: true)
-                    .frame(width: 132)
-                    .offset(x: shuffleOffset, y: -shuffleOffset * 0.25)
-                    .rotationEffect(.degrees(shuffleOffset * 0.09))
-                CardBackView(isHighlighted: true)
-                    .frame(width: 132)
-                    .offset(x: -shuffleOffset, y: shuffleOffset * 0.25)
-                    .rotationEffect(.degrees(-shuffleOffset * 0.09))
+                ForEach(Array(0..<Swift.max(1, slots)), id: \.self) { slot in
+                    let lead = slot == 0
+                    CardBackView(isHighlighted: true)
+                        .frame(width: slots > 1 ? 132 : 156)
+                        .offset(
+                            x: lead ? shuffleOffset : -shuffleOffset,
+                            y: (lead ? -shuffleOffset : shuffleOffset) * 0.25
+                        )
+                        .rotationEffect(.degrees(shuffleOffset * (lead ? 0.09 : -0.09)))
+                }
             }
             .cardShadow(lift: 20)
             .onAppear {

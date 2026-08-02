@@ -206,12 +206,21 @@ final class EngineTests: XCTestCase {
         assertLegal(effect(.ten, .spades, in: board(tally: 0)), tally: -10)
     }
 
-    func testCannotDipBelowZeroFromAPositiveTally() {
-        // Strict reading of the rulebook: negatives are entered from exactly 0.
+    /// Zero is a one-way gate: you may drop through it from anywhere, but you
+    /// have to land on it exactly to climb back out. Diving is cheap; leaving
+    /// isn't.
+    func testATenDropsBelowZeroFromAnyTally() {
+        assertLegal(effect(.ten, .spades, in: board(tally: 8)), tally: -2)
+        assertLegal(effect(.ten, .spades, in: board(tally: 3)), tally: -7)
+        assertLegal(effect(.ten, .spades, in: board(tally: 55)), tally: 45)
+    }
+
+    func testClimbingOutOfTheNegativesStillHasToLandOnZero() {
         assertIllegal(
-            effect(.ten, .spades, in: board(tally: 8)),
-            .cannotGoNegativeExceptFromZero(resulting: -2)
+            effect(.five, .spades, in: board(tally: -2)),
+            .mustLandOnZeroFirst(resulting: 3)
         )
+        assertLegal(effect(.two, .spades, in: board(tally: -2)), tally: 0)
     }
 
     func testCanPushFurtherNegativeWithAnotherTen() {

@@ -252,9 +252,9 @@ struct RuleSection: Identifiable {
             title: "Going below zero",
             glyph: "thermometer.snowflake",
             points: [
-                "From a tally of exactly 0 you may play a 10 to push the tally negative.",
-                "Climbing back out, you must land on exactly 0 — no jumping straight from negative to positive.",
-                "Once back at 0, it's a fresh start: you can dive again or resume climbing.",
+                "A 10 drops the tally below zero from wherever it stands. You don't have to be on 0 to dive.",
+                "Climbing back out is the hard part: you must land on exactly 0 — no jumping straight from negative to positive.",
+                "Down there only 10s push you further negative, and a 9 is unplayable.",
             ]
         ),
         RuleSection(

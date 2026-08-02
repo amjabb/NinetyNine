@@ -73,7 +73,6 @@ enum IllegalReason: Error, Equatable, Sendable {
     case nineInForcedNegativeSlot
     case tenInForcedNegativeSlot
     case mustLandOnZeroFirst(resulting: Int)
-    case cannotGoNegativeExceptFromZero(resulting: Int)
     case missingDeclaration(String)
     case cardNotInHand
 
@@ -91,8 +90,6 @@ enum IllegalReason: Error, Equatable, Sendable {
             return "A 10 is already negative — it can't take the forced-negative slot."
         case .mustLandOnZeroFirst(let resulting):
             return "From a negative tally you must land exactly on 0 first — that lands on \(resulting)."
-        case .cannotGoNegativeExceptFromZero(let resulting):
-            return "You can only dip below zero from a tally of exactly 0 — that lands on \(resulting)."
         case .missingDeclaration(let what):
             return what
         case .cardNotInHand:
@@ -127,13 +124,6 @@ struct CardEffect: Equatable, Sendable {
 // MARK: - Resolver
 
 enum Rules {
-    /// The rulebook says a 10 may be played "to send the tally negative" at the
-    /// start of play and "any time the tally returns to exactly 0". Read
-    /// strictly, that forbids dropping below zero from a mid-range tally (e.g.
-    /// 8 → −2). We enforce that reading; flip this to `false` to allow going
-    /// negative from any tally.
-    static let negativeEntryRequiresZero = true
-
     static let ceiling = 99
     static let hundredException = 100
 
@@ -278,14 +268,15 @@ enum Rules {
             return .failure(.wouldExceed99(resulting: newTally))
         }
 
-        // Climbing out of the negatives has to touch exactly 0 on the way.
+        // Zero is a one-way gate. Going *down* through it is free — a 10 drops
+        // the tally below zero from wherever it stands — but climbing back out
+        // has to touch exactly 0 on the way.
+        //
+        // The asymmetry is the point: diving is cheap and getting out is not,
+        // so the negatives are somewhere you choose to go and then have to work
+        // your way back from.
         if tally < 0 && newTally > 0 {
             return .failure(.mustLandOnZeroFirst(resulting: newTally))
-        }
-
-        // Dipping below zero is only available from a standing start of 0.
-        if negativeEntryRequiresZero && newTally < 0 && tally > 0 {
-            return .failure(.cannotGoNegativeExceptFromZero(resulting: newTally))
         }
 
         // Follow the suit, or answer the card. `lockBlocking` is the single

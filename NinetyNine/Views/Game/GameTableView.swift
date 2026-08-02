@@ -127,7 +127,8 @@ struct GameTableView: View {
                     player: opponent,
                     isCurrent: viewModel.view?.currentPlayerID == opponent.id,
                     isThinking: viewModel.thinkingPlayerID == opponent.id,
-                    isCompact: viewModel.opponents.count > 3
+                    isCompact: viewModel.opponents.count > 3,
+                    isNext: viewModel.view?.nextPlayerID == opponent.id
                 )
             }
         }
@@ -148,17 +149,13 @@ struct GameTableView: View {
             )
             .frame(height: gaugeHeight)
 
-            // The active discard sits to the side of the gauge, angled, so the
-            // last card played is always visible without covering the number.
-            if let top = viewModel.view?.topOfDiscard {
-                CardFaceView(card: top)
-                    .frame(width: gaugeHeight * 0.25)
-                    .rotationEffect(.degrees(-7))
-                    .cardShadow(lift: 4)
+            // The discard sits to the side of the gauge, angled, so the last
+            // card played is always visible without covering the number — and
+            // the ones behind it are draggable, because what has already gone
+            // decides the next play as much as the tally does.
+            if let pile = viewModel.view?.discardPile, !pile.isEmpty {
+                DiscardTrailView(pile: pile, cardWidth: gaugeHeight * 0.25)
                     .offset(x: gaugeHeight * 0.52, y: gaugeHeight * 0.25)
-                    .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    .id(top.id)
-                    .accessibilityLabel("Top of the discard pile, \(top.accessibleName)")
             }
 
             // Floating delta chip.
@@ -480,7 +477,7 @@ struct GameTableView: View {
 
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
+        case .choosing(let id, _), .rolling(let id, _), .revealed(_, _, let id),
              .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
             return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
@@ -490,7 +487,7 @@ struct GameTableView: View {
 
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
-        case .choosing(let id, _), .rolling(let id), .revealed(_, _, let id),
+        case .choosing(let id, _), .rolling(let id, _), .revealed(_, _, let id),
              .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
             return id == viewModel.viewingPlayerID
         case .idle:

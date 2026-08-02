@@ -18,6 +18,8 @@ struct OpponentSeatView: View {
     var isThinking: Bool
     /// Compact form for tables with four or more opponents.
     var isCompact: Bool = false
+    /// True for the seat that plays after the current one.
+    var isNext: Bool = false
 
     @Environment(\.motion) private var motion
     @State private var thinkingSweep: Double = 0
@@ -111,20 +113,40 @@ struct OpponentSeatView: View {
     // MARK: Name + count
 
     private var name: some View {
-        HStack(spacing: 4) {
-            Text(player.name)
-                .font(.system(size: isCompact ? 11 : 13, weight: .semibold))
-                .foregroundStyle(isCurrent ? Palette.brassLight : Palette.ivory.opacity(0.85))
-                .lineLimit(1)
-            if !player.isEliminated {
-                Text("\(player.handCount)")
-                    .font(Typography.counter(isCompact ? 10 : 11, weight: .bold))
-                    .foregroundStyle(Palette.ivoryDim)
-                    .padding(.horizontal, 4)
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                // A size up across the board. This row carries the two things
+                // that decide a play — how many cards they hold, and whether
+                // they owe two — and it was being reported as hard to read.
+                Text(player.name)
+                    .font(.system(size: isCompact ? 13 : 15, weight: .semibold))
+                    .foregroundStyle(isCurrent ? Palette.brassLight : Palette.ivory.opacity(0.9))
+                    .lineLimit(1)
+                if !player.isEliminated {
+                    Text("\(player.handCount)")
+                        .font(Typography.counter(isCompact ? 12 : 13, weight: .bold))
+                        .foregroundStyle(Palette.ivory)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(.black.opacity(0.4)))
+                }
+            }
+
+            // Who's about to be handed the tally. Knowing this *and* whether
+            // they owe two plays is most of the tactics in 99, and it was
+            // spread across two corners of the screen.
+            if isNext && !player.isEliminated {
+                Text("NEXT")
+                    .font(.system(size: isCompact ? 8 : 9, weight: .black))
+                    .tracking(1.2)
+                    .foregroundStyle(Palette.feltEdge)
+                    .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(.black.opacity(0.35)))
+                    .background(Capsule().fill(Palette.brassLight))
+                    .transition(.scale.combined(with: .opacity))
             }
         }
+        .animation(motion.animation(Motion.panel), value: isNext)
     }
 
     // MARK: Indicators

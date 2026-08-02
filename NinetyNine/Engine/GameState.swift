@@ -51,12 +51,14 @@ enum Difficulty: String, Codable, CaseIterable, Hashable, Sendable {
     case casual
     case sharp
     case ruthless
+    case merciless
 
     var displayName: String {
         switch self {
         case .casual: return "Casual"
         case .sharp: return "Sharp"
         case .ruthless: return "Ruthless"
+        case .merciless: return "Merciless"
         }
     }
 
@@ -65,8 +67,13 @@ enum Difficulty: String, Codable, CaseIterable, Hashable, Sendable {
         case .casual: return "Plays reasonably, but misses the killer line."
         case .sharp: return "Reads the table and defends its margin."
         case .ruthless: return "Hoards brakes, weaponises the lock, sets traps."
+        case .merciless: return "Counts what's gone and plays at whoever is next."
         }
     }
+
+    /// True for the tiers that reason about the *other* players rather than
+    /// only about their own hand.
+    var readsTheTable: Bool { self == .merciless }
 }
 
 // MARK: - Suit lock
