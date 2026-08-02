@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.6` (`MARKETING_VERSION`) / `8` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.7` (`MARKETING_VERSION`) / `9` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,80 +28,86 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.6 (build 8)
+## What's New — version 1.7 (build 9)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
-none of it. The store text is cumulative. The TestFlight note is the delta from
-1.5.
+none of it. The store text is cumulative. The TestFlight note is the delta
+from 1.6.
 
 ### App Store — "What's New in This Version"
 
 ```
-A SMALLER HAND, AND A WELL YOU BUILD YOURSELF
+AN OPPONENT THAT PLAYS AT YOU
+
+Merciless is a new hardest difficulty, and it works differently from the rest.
+The others weigh the board. This one weighs *you*: before every card it works
+out how likely the next player is to be left with nothing legal — from what's
+already been played, how many cards they're holding, whether they owe two from a
+skip, and whether their well is spent. Then it plays the card that hurts most.
+
+It counts, it doesn't cheat. It knows what's on the table and how many cards you
+hold, the same as you do.
+
+A SMALLER HAND
 
 You hold three cards now, not five. Three is barely a hand: there is rarely a
 safe card and a brake and an out all at once, so most turns are a choice between
-bad options rather than a hunt for the best one — and the tally climbs faster,
-because nobody can sit on a 10 waiting for the right moment.
+bad options — and the tally climbs faster, because nobody can sit on a 10 waiting
+for the right moment.
 
-Your well is yours to build, and you build it blind. Everything the dealer deals
-goes to your hand, and before a card is played you bury two of it face down. You
-don't get to look. When you're finally forced to open it you can shake the phone
-to shuffle the two first, the way you would at a table.
+A WELL YOU BUILD YOURSELF, BLIND
 
-So the dealer's number isn't a hand size, it's how many cards to deal. Deal
-seven and you open with five and play down to three. Deal three and you're
-burying two of three — no choice at all, which is its own kind of cruelty.
+Everything the dealer deals goes to your hand, and before a card is played you
+bury two of it face down. You don't get to look. When you're finally forced to
+open it, shake the phone to shuffle the two first, the way you would at a table.
 
-THE SUIT LOCK IS SURVIVABLE
+THE LOCK IS SURVIVABLE, THE FLOOR ISN'T
 
-Follow the locked suit, or answer the card: play the same rank as the one face
-up, whatever suit you're holding, and the lock moves to your suit. A Queen
-ignores the lock entirely.
+Follow the locked suit, or answer the card — play the same rank as the one face
+up, whatever suit, and the lock moves to yours. And a 10 now drops the tally
+below zero from wherever it stands; it's climbing back out that has to land on
+exactly nothing.
 
 ALSO NEW SINCE 1.0
 
-• Online multiplayer over Game Center. Play a turn, put the phone down, come
-  back tomorrow.
-• Pass and play for two to six on one device, with the screen covering itself
-  between turns — including while each player buries their well.
-• Press and hold a card to play every copy of it you're holding as one turn. Two
-  fours reverse twice and cancel out; three flip the direction once.
-• A Snackoo is announced to the whole table, cards and all.
-• The whole table watches when somebody goes to the well, and sees the card they
-  didn't pick if it ends them.
-• The turn queens go poisonous takes the screen instead of sliding past.
-• The tally wheel says which way play is going, and the table says who's next.
+• Online multiplayer over Game Center, a turn at a time.
+• Pass and play for two to six on one device, the screen covering itself between
+  turns — including while each player buries their well.
+• Press and hold a card to play every copy of it as one turn.
+• The tally wheel points the way play is going; the table says who's next and
+  who owes two.
+• The last few cards played stay on the table.
+• A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 1.6 (build 8)
+### TestFlight — test notes for 1.7 (build 9)
 
 ```
-THE HAND IS THREE. Everything else follows from that — please play a few rounds
-before judging any single change.
+NEW HARDEST DIFFICULTY: Merciless. Ruthless is now the middle tier. Merciless
+beats Ruthless about 68% of the time over 60 games — please tell me if it still
+feels beatable, and whether it feels like it's cheating (it isn't; it sees the
+discard pile, its own hand, and everyone's hand counts, same as you).
 
-Fixed since 1.5, both reported:
-• Nobody draws on somebody else's turn any more. Turn order advances as part of
-  the previous player's move, and the hand top-up was riding along with it — so
-  in pass-and-play, the next player's cards were drawn on the previous player's
-  screen. If one was a queen, queens turned poisonous and were announced during
-  a turn that had nothing to do with them. Every hand is now brought to its cap
-  once, at the deal.
-• A Snackoo shows the three cards, to everyone.
+NEW RULE: a 10 goes negative from any tally. Only climbing back out still has to
+land on exactly 0.
 
-New rule: under a suit lock you can play a card matching the RANK of the one
-face up, any suit, and the lock moves to the suit you played. An 8 still names
-its own suit rather than inheriting yours.
+Fixed since 1.6:
+• The draw animation showed two well cards when only one was left. The pick
+  screen was fixed last build; this was a second, separate place with the same
+  symptom, which is why it survived.
 
-Poisoned queens now bite hard against a hand of three — one queen and you hold
-two, two and you hold one — so clearing three with a Snackoo gives that capacity
-back.
+Changed on the table:
+• Direction is drawn into the tally ring as arrows rather than written in a
+  corner.
+• The locked suit's pip is about twice the size.
+• Opponent names are bigger, and NEXT marks whoever plays after the current
+  player — worth checking that "owes 2" is now readable at a glance.
+• The last few cards played stay fanned behind the live one.
 
-WORTH KNOWING: this build refuses online matches started before 1.4.
+WORTH KNOWING: refuses online matches started before 1.4.
 
 STILL UNTESTED: two-device Game Center has never run against a real network.
-Turn passing, quitting mid-match, and invitations are what to hammer.
 ```
 
 ---
