@@ -175,19 +175,29 @@ struct AIPlayer {
             }
         }
 
-        // The suit lock is strongest when we're long in the suit we name.
+        // The suit lock used to be the strongest weapon in the game. It isn't
+        // any more: a card matching the rank of the one face up beats it from
+        // any suit, and takes the lock with it. So locking is worth a little,
+        // not a lot, and worth most when we're long in the suit we name — which
+        // at least means we can follow our own lock.
         if rank == .eight, let locked = candidate.declaration.lockSuit {
             let support = player.hand.filter { $0.suit == locked && $0.id != candidate.card.id }.count
-            score += 4 + Double(support) * (difficulty == .ruthless ? 5 : 3)
-            // Ruthless play prefers locking a suit it is long in *and* that is
-            // statistically scarce, squeezing everyone else.
-            if difficulty == .ruthless && support >= 3 { score += 10 }
+            score += 2 + Double(support) * 2
         }
 
         // Brakes (10s, Aces) are worth hoarding while the tally is low; face
         // cards are dead weight and should be shed early.
+        //
+        // With one exception, and it's new: a 10 now dives below zero from any
+        // tally, and a negative board is the strongest position in the game —
+        // everyone downstream has to climb out through exactly nothing. Diving
+        // is no longer something you wait at zero for, so a 10 played early can
+        // be the best card on the table rather than a wasted brake.
         let isBrake = candidate.card.rank == .ten || candidate.card.rank == .ace
-        if state.tally < 45 {
+        let dives = candidate.effect.newTally < 0 && state.tally >= 0
+        if dives {
+            score += difficulty == .casual ? 6 : 18
+        } else if state.tally < 45 {
             if isBrake { score -= difficulty == .casual ? 2 : 9 }
             if candidate.card.rank == .jack || candidate.card.rank == .king { score += 3 }
         } else if state.tally > 80 && isBrake {

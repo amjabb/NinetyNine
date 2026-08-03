@@ -25,7 +25,8 @@ struct TallyGauge: View {
     /// Drives the travelling direction arrow. Its own phase, not the shimmer's:
     /// the shimmer breathes in and out, and an arrow that ran backwards half the
     /// time would say the opposite of what it means.
-    @State private var arrowPhase: Double = 0
+    /// How long one arrowhead takes to travel to where the next one started.
+    private let arrowTravel: TimeInterval = 2.6
 
     private var pressure: Double {
         tally > 0 ? min(1, Double(tally) / 99.0) : 0
@@ -51,19 +52,28 @@ struct TallyGauge: View {
                     .stroke(Color.black.opacity(0.45), style: .init(lineWidth: ringWidth, lineCap: .round))
 
                 // The ring itself points the way play is going.
-                DirectionRing(
-                    startAngle: startAngle,
-                    sweep: sweep,
-                    isClockwise: isClockwise,
-                    phase: arrowPhase
-                )
-                .stroke(
-                    // Bright and reasonably heavy: at brass-on-brass they
-                    // disappeared into the ring they're drawn on.
-                    Palette.brassLight.opacity(0.95),
-                    style: .init(lineWidth: ringWidth * 0.34, lineCap: .round, lineJoin: .round)
-                )
-                .shadow(color: Palette.feltShadow.opacity(0.8), radius: 1)
+                //
+                // Driven by a timeline rather than an animated `@State`. A
+                // `repeatForever` started in `onAppear` is at the mercy of every
+                // enclosing `.animation(_:value:)` — the table has several, and
+                // one of them was replacing the transaction and leaving the
+                // arrows parked. A timeline reads the clock instead, so nothing
+                // upstream can stop it.
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: motion.reduceMotion)) { context in
+                    DirectionRing(
+                        startAngle: startAngle,
+                        sweep: sweep,
+                        isClockwise: isClockwise,
+                        phase: arrowPhase(at: context.date)
+                    )
+                    .stroke(
+                        // Bright and reasonably heavy: at brass-on-brass they
+                        // disappeared into the ring they're drawn on.
+                        Palette.brassLight.opacity(0.95),
+                        style: .init(lineWidth: ringWidth * 0.34, lineCap: .round, lineJoin: .round)
+                    )
+                    .shadow(color: Palette.feltShadow.opacity(0.8), radius: 1)
+                }
                 .frame(width: side, height: side)
 
                 // Tick marks every 10, longer at 50, longest at 99.
@@ -131,22 +141,6 @@ struct TallyGauge: View {
                 if let ambient = motion.ambient(Motion.breathe(1.1)) {
                     withAnimation(ambient) { shimmerPhase = 1 }
                 }
-                // One way, forever. Reduce Motion leaves it parked, which is
-                // fine — the wording underneath still says which way play goes.
-                if let travel = motion.ambient(
-                    .linear(duration: 3.4).repeatForever(autoreverses: false)
-                ) {
-                    withAnimation(travel) { arrowPhase = 1 }
-                }
-            }
-            .onChange(of: isClockwise) { _, _ in
-                // Restart so the reversal reads as a reversal rather than the
-                // arrow continuing on its way.
-                arrowPhase = 0
-                guard let travel = motion.ambient(
-                    .linear(duration: 3.4).repeatForever(autoreverses: false)
-                ) else { return }
-                withAnimation(travel) { arrowPhase = 1 }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -210,6 +204,16 @@ struct TallyGauge: View {
             }
 
         }
+    }
+
+    /// Where the arrowheads have drifted to, read off the clock.
+    ///
+    /// Direction is baked into the *shape*, so this only ever moves forwards —
+    /// reversing play flips which way the heads point, not which way they slide.
+    private func arrowPhase(at date: Date) -> Double {
+        guard !motion.reduceMotion else { return 0 }
+        let seconds = date.timeIntervalSinceReferenceDate
+        return (seconds / arrowTravel).truncatingRemainder(dividingBy: 1)
     }
 
     private var headroomText: String {

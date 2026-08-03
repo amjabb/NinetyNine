@@ -415,3 +415,104 @@ final class WellCardCountTests: XCTestCase {
         await started.value
     }
 }
+
+// MARK: - The Snackoo shows its cards
+
+/// Reported: the celebration didn't show the cards. It had been built to, and
+/// the view model was passing them — but the table constructed the view without
+/// them, and the parameter had a default of `[]`, so it compiled and quietly
+/// celebrated nothing.
+///
+/// The parameter no longer has a default. These check the half that a type
+/// can't: that the cards reach the moment at all.
+@MainActor
+final class SnackooShowsItsCardsTests: XCTestCase {
+
+    private func table() async -> GameViewModel {
+        let model = GameViewModel.solo(
+            difficulty: .sharp, opponentCount: 2, cardsDealt: 7,
+            playerName: "You", dealerID: nil, seed: 1
+        )
+        await model.begin()
+        var guardCount = 0
+        while model.view?.youAreChoosingYourWell == true && guardCount < 8 {
+            guardCount += 1
+            model.chooseWell(slots: [0, 1])
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        return model
+    }
+
+    private func moment(
+        _ model: GameViewModel, absorbing events: [GameEvent]
+    ) async -> GameViewModel.SnackooMoment? {
+        let absorbing = Task { await model._absorbForTesting(events) }
+        var captured: GameViewModel.SnackooMoment?
+        let deadline = Date().addingTimeInterval(4)
+        while captured == nil, Date() < deadline {
+            captured = model.snackooMoment
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        await absorbing.value
+        return captured
+    }
+
+    func testTheThreeCardsReachTheCelebration() async throws {
+        let model = await table()
+        let jacks = [Suit.spades, .hearts, .clubs].enumerated().map {
+            Card(id: 970 + $0.offset, rank: .jack, suit: $0.element)
+        }
+
+        let captured = await moment(
+            model, absorbing: [.snackoo(by: "ai0", kind: .threeOfAKind(.jack), cards: jacks)]
+        )
+        let shown = try XCTUnwrap(captured, "No celebration appeared")
+        XCTAssertEqual(
+            shown.cards.map(\.id), jacks.map(\.id),
+            "The celebration has to carry the cards being declared"
+        )
+        XCTAssertFalse(shown.isYours)
+    }
+
+    func testAQueenSnackooShowsTheQueens() async throws {
+        let model = await table()
+        let queens = [Suit.spades, .hearts, .diamonds].enumerated().map {
+            Card(id: 980 + $0.offset, rank: .queen, suit: $0.element)
+        }
+
+        let captured = await moment(
+            model, absorbing: [.snackoo(by: "ai1", kind: .threeQueens, cards: queens)]
+        )
+        let shown = try XCTUnwrap(captured)
+        XCTAssertEqual(shown.cards.count, 3)
+        XCTAssertTrue(shown.cards.allSatisfy { $0.rank == .queen })
+    }
+
+    /// And the engine actually fills them in — the event is where they come from.
+    func testTheEngineNamesTheCardsItDiscarded() throws {
+        let engine = try GameEngine(
+            seats: [("a", "A", .human), ("b", "B", .human), ("c", "C", .human)],
+            dealerIndex: 2, cardsDealt: 7, seed: 313
+        )
+        engine._finishWellSelectionForTesting()
+
+        var state = engine.state
+        let id = state.currentPlayer.id
+        let seat = try XCTUnwrap(state.index(of: id))
+        let sevens = [Suit.spades, Suit.hearts, Suit.clubs].enumerated().map {
+            Card(id: 990 + $0.offset, rank: .seven, suit: $0.element)
+        }
+        state.players[seat].hand = sevens
+        engine._replaceStateForTesting(state)
+
+        let events = try engine.declareSnackoo(by: id, kind: .threeOfAKind(.seven))
+        guard case .snackoo(_, _, let cards)? = events.first(where: {
+            if case .snackoo = $0 { return true }
+            return false
+        }) else {
+            XCTFail("Expected a Snackoo event")
+            return
+        }
+        XCTAssertEqual(Set(cards.map(\.id)), Set(sevens.map(\.id)))
+    }
+}

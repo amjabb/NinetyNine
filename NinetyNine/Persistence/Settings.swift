@@ -34,6 +34,12 @@ final class Settings: ObservableObject {
     @AppStorage("settings.localPlayers") var localPlayerCount: Int = 3
     /// Comma-separated names for pass-and-play seats.
     @AppStorage("settings.localNames") private var localNamesRaw: String = ""
+    /// Bank everyone's well automatically instead of passing the device around
+    /// the table before a card has been played.
+    ///
+    /// Costs nothing in fairness: the well is chosen face down, so a player
+    /// picking positions is guessing exactly as hard as the app is.
+    @AppStorage("settings.autoWell") var autoAssignWells: Bool = false
 
     /// Raw entered names, padded to the seat count. Entries may be empty — the
     /// field shows "Player 3" as a *placeholder*, not as literal text the player

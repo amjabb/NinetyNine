@@ -18,7 +18,12 @@ struct SnackooCelebration: View {
     let headline: String
     let detail: String
     /// The three cards being declared, face up.
-    var cards: [Card] = []
+    ///
+    /// No default. It had one, and the table then built this view without
+    /// passing them — which compiled perfectly and showed a celebration with
+    /// nothing to celebrate. A required parameter is the only thing that would
+    /// have caught it.
+    let cards: [Card]
     /// Whose it was, for the colour of the burst.
     var isYours: Bool
 
@@ -82,7 +87,7 @@ struct SnackooCelebration: View {
             withAnimation(motion.animation(.spring(duration: 0.4, bounce: 0.5))) {
                 textScale = 1
             }
-            withAnimation(motion.animation(.easeOut(duration: 1.9))) {
+            withAnimation(motion.animation(.easeOut(duration: 2.8))) {
                 progress = 1
             }
         }
@@ -105,8 +110,8 @@ struct SnackooCelebration: View {
         let fall = size.height * (0.9 + drift * 0.25)
 
         // Up fast, then down under gravity: two eased halves rather than a line.
-        let rise = min(1, progress / 0.38)
-        let drop = max(0, (progress - 0.38) / 0.62)
+        let rise = min(1, progress / 0.32)
+        let drop = max(0, (progress - 0.32) / 0.68)
         let y = size.height * 0.42 - peak * rise + fall * drop * drop
 
         return RoundedRectangle(cornerRadius: 1.5, style: .continuous)

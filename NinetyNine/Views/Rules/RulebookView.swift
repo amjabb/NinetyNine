@@ -197,6 +197,7 @@ struct RuleSection: Identifiable {
                 "You won't see those two again until you're stuck with nothing legal in hand.",
                 "The cards that make the best well are the ones you'd want in hand — a Queen is never blocked, a Jack can't bust you. That's the whole decision.",
                 "A small deal is a thin choice: at three cards you bank two of three.",
+                "You pick face down, so pass-and-play tables can have the app bank everyone's well instead — same blind guess, without a lap of the table first.",
             ]
         ),
         RuleSection(

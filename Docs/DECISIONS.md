@@ -228,3 +228,44 @@ reported.
 
 That's undetectable from the data, so the payload states its rules version and a
 mismatch is refused with an explanation rather than tolerated.
+
+---
+
+## 15. Auto-banked wells are random positions, not the first two
+
+Pass-and-play can bank everyone's well without asking, because the opening lap of
+the table is four hand-offs spent on a decision made with no information: the
+well is chosen face down, by position.
+
+That last part is what makes the option safe to offer at all. It isn't the app
+playing for you — there is nothing to play. It is the app guessing where you
+would have guessed.
+
+It does mean the *implementation* has to guess the way a player would. Taking
+slots 0 and 1 was the obvious version and is wrong: hands are dealt sorted, so
+"off the top of the fan" banks everyone's two lowest cards in every game. A
+player picking blind has no such bias, so neither can this. The picks are random
+positions, drawn per seat.
+
+They also go into the shared action log as ordinary `chooseWell(slots:)` actions.
+Two consequences, both wanted: replay is exact, because the log records what was
+picked rather than a rule for picking it; and there is no new `PlayerAction`
+case, so the online payload version is untouched.
+
+## 16. Ruthless was tuned against rules that no longer exist
+
+`testRuthlessBeatsCasual` fell to exactly 50%, which is the test doing its job.
+Two rule changes had quietly invalidated the tier's strategy:
+
+- It paid a premium to lock a suit it was long in. But a lock is now escapable by
+  any card matching the rank showing, and the escaper takes the lock with them —
+  so it was buying something that had stopped existing.
+- It hoarded 10s while the tally was low, waiting for the zero it needed to dive
+  from. Diving now works from any tally, so the wait was pure cost.
+
+Retuned to the rules as they are: locking is worth a little, and going negative
+is worth a lot and worth doing on sight. Ruthless 58% vs Casual, Merciless 61%
+vs Ruthless — the ladder is ordered again.
+
+The general lesson is that the AI encodes the rules a second time, in a form no
+compiler checks. A rule change is not done when the engine agrees with it.

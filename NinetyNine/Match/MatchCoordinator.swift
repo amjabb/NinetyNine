@@ -200,6 +200,39 @@ final class MatchCoordinator: ObservableObject {
         return engine.state.wellChooserID ?? engine.state.currentPlayer.id
     }
 
+    /// Bank the opening well for local human seats instead of asking them.
+    ///
+    /// Pass-and-play only, and only worth having there: the opening well costs
+    /// a full lap of the table before anybody has played a card, and it is the
+    /// one decision in the game made with no information at all.
+    var autoAssignLocalWells = false
+
+    /// True when the game is waiting on a well this app has been told to pick.
+    var isAutoWellTurn: Bool {
+        guard autoAssignLocalWells, mode == .passAndPlay,
+              let engine, !engine.state.isOver,
+              let chooser = engine.state.wellChooserID
+        else { return false }
+        return participants.first { $0.id == chooser }?.kind.isLocalHuman == true
+    }
+
+    /// Bank one local seat's well at random.
+    ///
+    /// Random *positions*, not the first two: hands are dealt sorted, so taking
+    /// the top of the fan would bank everyone's two lowest cards in every game
+    /// — a systematic bias where the player's own blind guess has none.
+    @discardableResult
+    func stepAutoWell() -> [GameEvent]? {
+        guard isAutoWellTurn, let engine,
+              let chooser = engine.state.wellChooserID,
+              let seat = engine.state.index(of: chooser)
+        else { return nil }
+        let dealt = engine.state.players[seat].hand.count
+        guard dealt >= Rules.wellSize else { return nil }
+        let slots = Array(0..<dealt).shuffled().prefix(Rules.wellSize).sorted()
+        return applyLocally(.chooseWell(slots: Array(slots)), by: chooser)
+    }
+
     /// True when the seat the game is waiting on is driven by AI in this process.
     var isAITurn: Bool {
         guard let engine, !engine.state.isOver, let active = activeSeatID else { return false }
@@ -277,8 +310,12 @@ final class MatchCoordinator: ObservableObject {
         defer { isDrivingAI = false }
 
         var safety = 0
-        while isAITurn, safety < 400 {
+        while isAITurn || isAutoWellTurn, safety < 400 {
             safety += 1
+            if isAutoWellTurn {
+                guard stepAutoWell() != nil else { break }
+                continue
+            }
             try? await Task.sleep(for: .seconds(Double.random(in: currentAIThinkingDelay)))
             guard stepAI() != nil else { break }
         }

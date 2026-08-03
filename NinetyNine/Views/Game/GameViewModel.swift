@@ -195,7 +195,8 @@ final class GameViewModel: ObservableObject {
         playerNames: [String],
         cardsDealt: Int,
         dealerID: String? = nil,
-        seed: UInt32? = nil
+        seed: UInt32? = nil,
+        autoAssignWells: Bool = false
     ) -> GameViewModel {
         let participants = playerNames.enumerated().map { index, name in
             MatchParticipant(
@@ -204,7 +205,7 @@ final class GameViewModel: ObservableObject {
                 kind: .localHuman
             )
         }
-        return GameViewModel(
+        let model = GameViewModel(
             participants: participants,
             mode: .passAndPlay,
             difficulty: .sharp,
@@ -213,6 +214,8 @@ final class GameViewModel: ObservableObject {
             seed: seed,
             recordedPlayerID: nil
         )
+        model.coordinator.autoAssignLocalWells = autoAssignWells
+        return model
     }
 
     /// Online: humans on other devices, over Game Center.
@@ -429,6 +432,12 @@ final class GameViewModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(Int(Double(dealtCards) * Motion.dealStagger * 1000) + 620))
         isDealing = false
 
+        // Before the first hand-off, not after: with auto-banked wells on, the
+        // app owes the table two decisions per seat, and prompting "pass to Ken"
+        // for a choice nobody is being asked to make is worse than the passing
+        // the option exists to avoid.
+        await driveAITurns()
+
         if mode == .passAndPlay {
             // The first player must confirm they're holding the device too,
             // otherwise the deal is face-up in front of everyone.
@@ -436,7 +445,6 @@ final class GameViewModel: ObservableObject {
         } else {
             Haptics.shared.play(.turnStart)
         }
-        await driveAITurns()
     }
 
     // MARK: - Player actions
@@ -947,8 +955,19 @@ final class GameViewModel: ObservableObject {
         defer { isDrivingAI = false }
 
         var safety = 0
-        while coordinator.isAITurn, !coordinator.isOver, safety < 400 {
+        while coordinator.isAITurn || coordinator.isAutoWellTurn, !coordinator.isOver, safety < 400 {
             safety += 1
+
+            // Auto-banked wells get a beat rather than a thinking delay — the
+            // point of the option is to get past this, but a table that banks
+            // four wells in one frame reads as a glitch rather than a deal.
+            if coordinator.isAutoWellTurn {
+                try? await Task.sleep(for: .milliseconds(220))
+                guard coordinator.stepAutoWell() != nil else { break }
+                await absorb(coordinator.consumeEvents())
+                continue
+            }
+
             let thinker = coordinator.currentPlayerID
             thinkingPlayerID = thinker
             try? await Task.sleep(for: .seconds(Double.random(in: coordinator.currentAIThinkingDelay)))
@@ -979,6 +998,10 @@ final class GameViewModel: ObservableObject {
     /// for as long as it runs, and under a loaded machine that is longer than
     /// any number you'd want to hardcode. A position forced while it's still
     /// going simply gets played over.
+    /// The shared log, for tests that care that a decision was *recorded* and
+    /// not just applied — anything missing from here breaks replay.
+    var _actionLogForTesting: [SubmittedAction] { coordinator.actionLog }
+
     func _settleForTesting(timeout: Duration = .seconds(20)) async {
         let deadline = ContinuousClock.now + timeout
         var stableTicks = 0
@@ -1142,7 +1165,9 @@ final class GameViewModel: ObservableObject {
                         isYours: mine
                     )
                 }
-                try? await Task.sleep(for: .milliseconds(2_000))
+                // Long enough to actually read the three cards. Two seconds
+                // was time to notice something had happened and not to see what.
+                try? await Task.sleep(for: .milliseconds(3_400))
                 withAnimation(Motion.drama) { snackooMoment = nil }
 
             case .drawPileReshuffled:

@@ -386,6 +386,7 @@ struct GameTableView: View {
             SnackooCelebration(
                 headline: moment.headline,
                 detail: moment.detail,
+                cards: moment.cards,
                 isYours: moment.isYours
             )
             .transition(.opacity)

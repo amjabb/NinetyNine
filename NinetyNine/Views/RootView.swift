@@ -210,7 +210,8 @@ struct RootView: View {
             activeGame = .passAndPlay(
                 playerNames: settings.resolvedLocalPlayerNames,
                 cardsDealt: cardsDealt,
-                dealerID: dealerID
+                dealerID: dealerID,
+                autoAssignWells: settings.autoAssignWells
             )
         case .online:
             startOnlineGame(cardsDealt: cardsDealt)

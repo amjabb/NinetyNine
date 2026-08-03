@@ -110,6 +110,7 @@ struct SetupView: View {
                         .onChange(of: settings.localPlayerCount) { _, _ in clampDeal() }
 
                         seatNames
+                        autoWellToggle
                     }
 
                     if mode != .online {
@@ -285,6 +286,28 @@ struct SetupView: View {
                 }
             }
         }
+    }
+
+    /// Pass-and-play only. Online players each hold their own device, and a solo
+    /// player picks their well without passing anything to anybody.
+    private var autoWellToggle: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Bank wells automatically")
+                    .font(Typography.bodyEmphasised)
+                    .foregroundStyle(Palette.ivory)
+                Text("Skip a lap of the table before the first card. The well is picked face down either way.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.ivoryFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Toggle("", isOn: $settings.autoAssignWells)
+                .labelsHidden()
+                .tint(Palette.brass)
+                .accessibilityIdentifier("setup.autoWell")
+        }
+        .padding(.top, 2)
     }
 
     private var cardsDealtSection: some View {
