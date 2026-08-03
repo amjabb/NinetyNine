@@ -299,10 +299,10 @@ final class GameViewModel: ObservableObject {
 
     private static func opponentNames(for difficulty: Difficulty) -> [String] {
         switch difficulty {
-        case .casual: return ["Pip", "Dot", "Bram", "Sunny", "Nell"]
         case .sharp: return ["Vale", "Corbin", "Ida", "Rook", "Marlow"]
         case .ruthless: return ["Mordant", "Sable", "Vex", "Grieve", "Thorne"]
         case .merciless: return ["Calder", "Wrenn", "Halloway", "Marsh", "Crane"]
+        case .cutthroat: return ["Quill", "Ash", "Verity", "Slate", "Mercer"]
         }
     }
 

@@ -68,7 +68,7 @@ final class GameKitTransport: NSObject, MatchTransport {
         ///  - 3: shuffling the well became an action. This one breaks the *other*
         ///    way — an older client can't decode a case it has never heard of, so
         ///    the whole payload fails and its match quietly stops updating.
-        static let currentRules = 3
+        static let currentRules = 4
 
         var rulesVersion: Int = MatchPayload.currentRules
         var seed: UInt32

@@ -363,7 +363,7 @@ final class ReplayTests: XCTestCase {
     /// Play a game with AI and record the exact action log.
     private func recordGame(seed: UInt32) throws -> (log: [SubmittedAction], finalTally: Int, winner: String?) {
         let engine = try GameEngine(
-            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
+            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.sharp))],
             dealerIndex: 2, cardsDealt: 6, seed: seed
         )
         engine._finishWellSelectionForTesting()
@@ -407,7 +407,7 @@ final class ReplayTests: XCTestCase {
             XCTAssertFalse(recorded.log.isEmpty)
 
             let replay = try GameEngine(
-                seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
+                seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.sharp))],
                 dealerIndex: 2, cardsDealt: 6, seed: seed
             )
             replay._finishWellSelectionForTesting()
@@ -430,7 +430,7 @@ final class ReplayTests: XCTestCase {
         let recorded = try recordGame(seed: seed)
 
         let replay = try GameEngine(
-            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
+            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.sharp))],
             dealerIndex: 2, cardsDealt: 6, seed: seed
         )
         replay._finishWellSelectionForTesting()
@@ -439,7 +439,7 @@ final class ReplayTests: XCTestCase {
         // Compare the full serialised state, not just a summary — a summary
         // would hide exactly the kind of drift this test exists to catch.
         let first = try GameEngine(
-            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.casual))],
+            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.ruthless)), ("c", "C", .ai(.sharp))],
             dealerIndex: 2, cardsDealt: 6, seed: seed
         )
         first._finishWellSelectionForTesting()

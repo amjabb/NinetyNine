@@ -24,7 +24,7 @@
 
 4a. **Building your well:** before anybody plays, each player in turn (starting to the dealer's left) chooses **two cards from their own hand** and buries them face down as their well. They don't see those cards again until they're stuck. What you bank is what you give up holding — and the cards that make the best well (a Queen is never blocked; a Jack can't bust you) are exactly the cards you'd want in hand.
 
-   The choice is made **face down** — the cards are picked by position, not by face — so a player banking their own well is guessing exactly as hard as anyone else would. Pass-and-play tables may therefore turn on *Bank wells automatically*, which picks each seat's two at random and saves a full lap of the table before a card has been played. It gives nothing away and takes nothing back: there is no information at this point for anybody to use.
+   The choice is made **face down** — the cards are picked by position, not by face — so a player banking their own well is guessing exactly as hard as anyone else would. Pass-and-play tables may therefore turn on *Bank wells automatically*, which picks each seat's two at random and saves a full lap of the table before a card has been played. It gives nothing away and takes nothing back: the deal is left in shuffle order until every well is buried, so a position tells nobody anything about the card behind it. (It did once — hands were sorted before the pick, which made slot 1 reliably your lowest card. That was a bug, and it is fixed.)
 
 5. **First turn:** the player to the dealer's right goes first, then play proceeds clockwise.
 

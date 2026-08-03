@@ -101,11 +101,16 @@ final class GameEngine {
             wellSelectionQueue: (0..<count).map { seats[(firstToReceive + $0) % count].id }
         )
 
-        // Hands are dealt sorted for a calmer read; the engine never depends on
-        // hand order, so this is purely presentational.
-        for index in state.players.indices {
-            state.players[index].hand = Self.sorted(state.players[index].hand)
-        }
+        // Deliberately *not* sorted yet.
+        //
+        // The well is chosen face down, by position — so if the deal were sorted
+        // before that choice, position would be a perfect proxy for rank. Slot 0
+        // would always be your lowest card and the last slot your highest, and a
+        // player who noticed could bank their two highest every game. It looks
+        // blind and isn't.
+        //
+        // The order cards arrive in is the shuffle's order, which carries nothing.
+        // Sorting happens once the well is buried and the hand is finally shown.
         state.turnStartedWithDebt = false
         state.playsRemainingThisTurn = 1
         note("Dealt \(cardsDealt) each — two of them go to your well.")
@@ -167,6 +172,14 @@ final class GameEngine {
 
         state.tally = effect.newTally
         state.discardPile.append(card)
+        // Playing the suit you once skipped on retires the read against you.
+        // A player who was void in hearts three turns ago has drawn since, and a
+        // stale read is worse than none — it aims the whole tier at a hole that
+        // has already been filled.
+        if let seat = state.index(of: playerID),
+           state.players[seat].skippedUnderLock == card.suit {
+            state.players[seat].skippedUnderLock = nil
+        }
         // Whether the *new* face-up card counts as an 8 — which is what decides
         // if the next player may take the lock over with an off-suit 8. A Queen
         // declared as an 8 counts, so she can be used to seize a lock and then
@@ -409,6 +422,11 @@ final class GameEngine {
         if !state.isChoosingWells {
             events.append(.wellSelectionFinished)
             note("\(state.currentPlayer.name) leads.")
+            // Now it's safe to sort: every well is buried, so hand order can no
+            // longer tell anybody which card sits behind which position.
+            for index in state.players.indices {
+                state.players[index].hand = Self.sorted(state.players[index].hand)
+            }
             // Everyone at once, here at the deal — not each player at the start
             // of their own turn.
             //
@@ -608,7 +626,12 @@ final class GameEngine {
         note("\(state.players[seat].name) skips — they owe two plays next turn.")
 
         // Failing to follow the lock is what breaks it.
-        if state.suitLock != nil {
+        if let lock = state.suitLock {
+            // And it says something, out loud, to everyone watching: they had
+            // nothing in that suit, no Queen, and nothing matching the rank
+            // showing. Recorded because the whole table saw it — this is a read
+            // any player can make, not private knowledge.
+            state.players[seat].skippedUnderLock = lock.suit
             state.suitLock = nil
             events.append(.suitLockLifted)
             note("The suit lock lifts.")

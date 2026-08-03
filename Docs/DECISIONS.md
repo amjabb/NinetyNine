@@ -269,3 +269,85 @@ vs Ruthless — the ladder is ordered again.
 
 The general lesson is that the AI encodes the rules a second time, in a form no
 compiler checks. A rule change is not done when the engine agrees with it.
+
+
+---
+
+## 17. The blind well pick wasn't blind
+
+Section 15 justified auto-banked wells on the grounds that "there is no
+information at this point for anybody to use." That was wrong when it was
+written.
+
+Hands were sorted at the deal, *before* the well was chosen. The pick is made by
+position, so position was a perfect proxy for rank: slot 0 was always your lowest
+card, the last slot always your highest. A player who noticed could bank their
+two highest cards every single game, and the interface presented this as a blind
+guess.
+
+The sort now happens when the last well is buried — the point at which hand order
+stops being a channel and starts being a convenience. The deal itself is left in
+the shuffle's order, which carries nothing.
+
+Two things worth keeping from this. The auto-well feature was *justified* by a
+property the code did not have, and the justification read as reasonable for a
+week. And the well-selection heuristics had quietly grown to exploit the sorted
+order — the tiers "differed only in where they reach, which is flavour rather
+than advantage" was true only once the leak was closed.
+
+## 18. Measuring the AI against the wrong game
+
+The strength harness played tiers heads-up, 60 games. Both were wrong.
+
+**Heads-up** is the one table size where playing at the next player means almost
+nothing: you hand them a pinned board and get it straight back. A tier built to
+squeeze has to be measured with three at the table, which is also how the game is
+actually played.
+
+**60 games** carries a standard error of about 6.5 points. Every historical
+figure quoted for these tiers — "58% vs Casual", "68% vs Ruthless" — was inside
+the noise. The ladder had been tuned against sampling error for weeks. It is 400
+games now, and the numbers moved.
+
+What the better measurement immediately found: **Ruthless was the weakest tier of
+the four**, below the one it was meant to outrank. It had never been compared to
+Sharp — only both to Casual — so nothing had ever asked the question.
+
+## 19. Tiers are capabilities, not constants
+
+Ruthless differed from Sharp by tweaked numbers: a heavier lookahead, a more
+hoarded Queen, a looser well gamble. Each was defensible in isolation and the
+combination measured out as the weakest opponent in the game.
+
+Constants tuned by taste don't compose into a ladder. Capabilities do. Each tier
+now *adds* something and keeps everything below it: Sharp plays the board,
+Ruthless keeps its outs, Merciless reads the table and its own future, Cutthroat
+prices the kill. Monotonicity is a property of the structure rather than a
+coincidence to be re-measured after every change.
+
+## 20. Nobody pressed to 99 because of arithmetic
+
+The complaint was that no opponent ever pushed the tally up to squeeze anybody.
+The cause was not a missing strategy. Pinning the board is priced against the
+headroom term, which is the largest number in the scorer: taking the tally to 99
+costs up to 76 points of it, while a kill was valued at 120 x its probability —
+about 40 points at a pinned board. The kill was worth less than the comfort, so
+it was never chosen, and no amount of new heuristics would have surfaced it.
+
+Two further things came out of measuring rather than reasoning:
+
+- Every *rare* weapon — pressing a skip debt, hunting a void suit, pinning at 99
+  — measures as neutral over 400 games. They fire a few times a game. Neutral is
+  not the same as useless, but it does mean win rate can't judge them, which is
+  why they have behaviour tests instead.
+- A single line intended to stop the tier leaking information — accepting 12
+  points worse odds rather than skip under a lock — cost it 13 points of win
+  rate. It was trading a coin flip on elimination for a fraction of a read. It
+  had also silently confounded an earlier experiment, which is the more expensive
+  kind of bug.
+
+**Cutthroat is not decisively stronger than Merciless.** It takes 35% against a
+33% fair share, which is about one standard error. It is clearly ahead of Sharp
+and Ruthless (46-48%), and it plays visibly differently. A larger gap wants a
+two-ply search rather than more heuristic tuning, and that is a bigger piece of
+work than this was.

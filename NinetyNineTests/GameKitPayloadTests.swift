@@ -135,7 +135,7 @@ final class GameKitPayloadTests: XCTestCase {
     func testEveryParticipantReplaysToTheSameState() throws {
         let seats: [(String, String, PlayerState.PlayerKind)] = [
             ("G:1", "Ada", .ai(.sharp)),
-            ("G:2", "Bo", .ai(.casual)),
+            ("G:2", "Bo", .ai(.sharp)),
             ("G:3", "Cy", .ai(.ruthless)),
         ]
         let source = try GameEngine(seats: seats, dealerIndex: 2, cardsDealt: 6, seed: 777)

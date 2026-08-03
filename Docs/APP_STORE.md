@@ -105,8 +105,7 @@ Changed:
 • Ruthless got stronger. Two recent rule changes had quietly made its strategy
   obsolete — it was still paying to lock a suit, which is now escapable by any
   card matching the rank showing, and still hoarding 10s waiting to reach zero
-  before going negative, which no longer needs the wait. It beats Casual about
-  58% of the time; Merciless beats Ruthless about 61%.
+  before going negative, which no longer needs the wait.
 
 WORTH KNOWING: refuses online matches started before 1.4.
 
@@ -200,10 +199,11 @@ plays, you survive and draw two more. If it doesn't, you're out on the spot.
 
 Last player standing wins.
 
-• THREE OPPONENTS WITH REAL OPINIONS
-Casual plays reasonably and misses the killer line. Sharp defends its margin and
-reads the table. Ruthless hoards its brakes, weaponises the suit lock, and sets
-traps a turn ahead. They don't cheat — they can only see what you can.
+• FOUR OPPONENTS WITH REAL OPINIONS
+Sharp defends its margin and reads the table. Ruthless keeps the cards that get
+it out of trouble. Merciless counts what's gone and plays at whoever is next.
+Cutthroat presses the tally, remembers the suit you couldn't follow, and names it
+again. They don't cheat — they can only see what you can.
 
 • BUILT TO BE FELT
 Custom haptic patterns for every event, from the flick of a card leaving your

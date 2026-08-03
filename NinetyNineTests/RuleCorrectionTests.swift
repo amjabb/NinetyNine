@@ -142,7 +142,7 @@ final class PoisonedQueenTests: XCTestCase {
         var checked = 0
         for seed in UInt32(1)...400 {
             let engine = try GameEngine(
-                seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual)), ("c", "C", .ai(.casual))],
+                seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.sharp)), ("c", "C", .ai(.sharp))],
                 dealerIndex: 2, cardsDealt: 8, seed: seed
             )
             engine._finishWellSelectionForTesting()
@@ -150,7 +150,7 @@ final class PoisonedQueenTests: XCTestCase {
             while !engine.state.isOver && !engine.state.queensArePoisonous && guardCount < 200 {
                 guardCount += 1
                 let current = engine.state.currentPlayer
-                let ai = AIPlayer(difficulty: .casual)
+                let ai = AIPlayer(difficulty: .sharp)
                 guard let move = ai.nextMove(for: current.id, engine: engine) else { break }
                 switch move.kind {
                 case .play(let cardID, let declaration):
@@ -239,7 +239,7 @@ final class WellChoiceTests: XCTestCase {
     private func stuckEngine(seed: UInt32) throws -> GameEngine? {
         // Find a position where a player is genuinely stuck, so the well is legal.
         let engine = try GameEngine(
-            seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual))],
+            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.sharp))],
             dealerIndex: 1, cardsDealt: 6, seed: seed
         )
         engine._finishWellSelectionForTesting()
@@ -252,7 +252,7 @@ final class WellChoiceTests: XCTestCase {
                engine.state.pendingWell == nil {
                 return engine
             }
-            let ai = AIPlayer(difficulty: .casual)
+            let ai = AIPlayer(difficulty: .sharp)
             guard let move = ai.nextMove(for: current.id, engine: engine) else { break }
             switch move.kind {
             case .play(let cardID, let declaration):

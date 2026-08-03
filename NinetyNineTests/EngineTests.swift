@@ -683,7 +683,7 @@ final class EngineTests: XCTestCase {
         for seed in [UInt32(3), 42, 777, 12345, 88888] {
             let engine = try GameEngine(
                 seats: [
-                    ("a", "A", .ai(.casual)),
+                    ("a", "A", .ai(.sharp)),
                     ("b", "B", .ai(.sharp)),
                     ("c", "C", .ai(.ruthless)),
                 ],
@@ -769,7 +769,7 @@ final class EngineTests: XCTestCase {
 
     func testEliminationReturnsCardsToCirculation() throws {
         let engine = try GameEngine(
-            seats: [("a", "A", .ai(.casual)), ("b", "B", .ai(.casual)), ("c", "C", .ai(.casual))],
+            seats: [("a", "A", .ai(.sharp)), ("b", "B", .ai(.sharp)), ("c", "C", .ai(.sharp))],
             dealerIndex: 0, cardsDealt: 5, seed: 4711
         )
         engine._finishWellSelectionForTesting()
@@ -777,7 +777,7 @@ final class EngineTests: XCTestCase {
         while engine.state.activePlayers.count == 3 && turns < 4000 {
             turns += 1
             let current = engine.state.currentPlayer
-            let ai = AIPlayer(difficulty: .casual)
+            let ai = AIPlayer(difficulty: .sharp)
             guard let move = ai.nextMove(for: current.id, engine: engine) else { break }
             switch move.kind {
             case .play(let cardID, let declaration):

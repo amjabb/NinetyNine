@@ -28,6 +28,13 @@ struct PlayerState: Identifiable, Codable, Hashable, Sendable {
     /// Set when the player skips; makes their *next* turn cost two plays.
     var owesExtraPlay: Bool = false
 
+    /// The suit that was locked when this player last failed to follow it.
+    ///
+    /// Public information: everyone at the table watched them skip while hearts
+    /// was locked, and everyone can draw the same conclusion. Cleared the moment
+    /// they play that suit, because the read is then demonstrably wrong.
+    var skippedUnderLock: Suit? = nil
+
     var isEliminated: Bool = false
     /// 1 for the first player knocked out, 2 for the second, and so on.
     var eliminationRank: Int?
@@ -48,32 +55,51 @@ struct PlayerState: Identifiable, Codable, Hashable, Sendable {
 // MARK: - Difficulty
 
 enum Difficulty: String, Codable, CaseIterable, Hashable, Sendable {
-    case casual
     case sharp
     case ruthless
     case merciless
+    case cutthroat
 
     var displayName: String {
         switch self {
-        case .casual: return "Casual"
         case .sharp: return "Sharp"
         case .ruthless: return "Ruthless"
         case .merciless: return "Merciless"
+        case .cutthroat: return "Cutthroat"
         }
     }
 
     var blurb: String {
         switch self {
-        case .casual: return "Plays reasonably, but misses the killer line."
         case .sharp: return "Reads the table and defends its margin."
         case .ruthless: return "Hoards brakes, weaponises the lock, sets traps."
         case .merciless: return "Counts what's gone and plays at whoever is next."
+        case .cutthroat: return "Presses the tally and remembers what you couldn't play."
         }
     }
 
     /// True for the tiers that reason about the *other* players rather than
     /// only about their own hand.
-    var readsTheTable: Bool { self == .merciless }
+    var readsTheTable: Bool { self == .merciless || self == .cutthroat }
+
+    /// True for tiers that keep their 4s, Jacks, 10s, Aces and Queens back for
+    /// the squeeze, and judge a hand by the boards it could still answer.
+    var holdsItsOuts: Bool { self != .sharp }
+
+    /// True for tiers that treat a high tally as a weapon rather than a danger.
+    ///
+    /// The lower tiers score a board by how much headroom is left under 99,
+    /// which reads as prudence and plays as generosity: the headroom you leave
+    /// is the headroom the next player gets. This flag switches the objective
+    /// from "keep the tally comfortable" to "leave them as little room as I can
+    /// still answer myself".
+    var pressesTheTally: Bool { self == .cutthroat }
+
+    /// True for tiers that remember which suit a player failed to follow.
+    ///
+    /// A player who skipped while hearts was locked has told the whole table
+    /// something. Everyone saw it; using it is reading, not cheating.
+    var huntsTheVoid: Bool { self == .cutthroat }
 }
 
 // MARK: - Suit lock

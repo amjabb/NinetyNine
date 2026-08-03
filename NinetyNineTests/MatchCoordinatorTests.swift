@@ -372,7 +372,7 @@ final class MatchParticipantTests: XCTestCase {
     func testOnlyLocalHumansHoldTheDevice() {
         XCTAssertTrue(MatchParticipant.Kind.localHuman.isLocalHuman)
         XCTAssertFalse(MatchParticipant.Kind.remoteHuman.isLocalHuman)
-        XCTAssertFalse(MatchParticipant.Kind.ai(.casual).isLocalHuman)
+        XCTAssertFalse(MatchParticipant.Kind.ai(.sharp).isLocalHuman)
     }
 
     func testParticipantsRoundTripForTheWire() throws {

@@ -27,6 +27,33 @@ struct AIMove: Equatable, Sendable {
 
 struct AIPlayer {
     let difficulty: Difficulty
+    /// Which pressing weapons are live. Full set in play; the strength harness
+    /// varies it to measure one weapon at a time.
+    var weapons: PressingWeapons = .all
+    /// What a certain kill is worth, in the same units as the headroom term
+    /// (which spans 0...99). Tuned by measurement, not taste — see
+    /// `AIStrengthTests.testKillPressureWeightSweep`.
+    var killPressureWeight: Double = AIPlayer.defaultKillPressureWeight
+
+    static let defaultKillPressureWeight: Double = 120
+    /// How much the pressing tier still cares about its own headroom. 1.0 is
+    /// "same as every other tier"; lower lets a kill outvote a comfortable board.
+    static let defaultHeadroomScale: Double = 1.0
+
+
+    init(
+        difficulty: Difficulty,
+        weapons: PressingWeapons = .all,
+        killPressureWeight: Double = AIPlayer.defaultKillPressureWeight,
+        headroomScale: Double = AIPlayer.defaultHeadroomScale
+    ) {
+        self.difficulty = difficulty
+        self.weapons = weapons
+        self.killPressureWeight = killPressureWeight
+        self.headroomScale = headroomScale
+    }
+
+    var headroomScale: Double = AIPlayer.defaultHeadroomScale
 
     // MARK: - Entry point
 
@@ -129,13 +156,6 @@ struct AIPlayer {
         guard !candidates.isEmpty else { return nil }
         var scored = candidates.map { ($0, score($0, player: player, state: state)) }
 
-        // Casual play is deliberately imperfect: it picks from the top of a
-        // noisy ranking rather than always finding the best line.
-        if difficulty == .casual {
-            var rng = SystemRandomNumberGenerator()
-            scored = scored.map { ($0.0, $0.1 + Double.random(in: -14...14, using: &rng)) }
-        }
-
         scored.sort { $0.1 > $1.1 }
         var winner = scored[0].0
         winner.rationale = rationale(for: winner, player: player, state: state)
@@ -148,11 +168,32 @@ struct AIPlayer {
         let rank = candidate.effect.effectiveRank
         var score = 0.0
 
-        // Headroom under the ceiling is the currency of this game.
+        // Headroom under the ceiling is the currency of this game — but the
+        // question is *whose*.
+        //
+        // Scoring it as "99 minus the new tally" is the single biggest term in
+        // this function, and it points the wrong way. It reads as prudence and
+        // plays as generosity: every point of headroom you decline to spend is
+        // headroom handed to the player after you. It is why the lower tiers
+        // drift around the middle of the board all game and almost never put
+        // anybody under real pressure.
+        //
+        // The first version of the pressing tier *dropped* this term, on the
+        // theory that headroom is what you hand the next player. Measured over
+        // 400 games it was worse than the tier below it: a board you cannot
+        // answer is worthless however tight it is for everyone else, and
+        // pressing indiscriminately is mostly self-harm — you get the pinned
+        // board back.
+        //
+        // So the term stays, and pressing is *opportunistic* instead: the
+        // weapons below fire when a kill is actually on (a debt to repay, a
+        // suit they've shown they haven't got, a spent well) and stay holstered
+        // the rest of the time.
         score += Double(Rules.ceiling - candidate.effect.newTally)
+            * (difficulty.pressesTheTally ? headroomScale : 1.0)
 
         // A negative tally is a fortress — everyone downstream is squeezed.
-        if candidate.effect.newTally < 0 { score += difficulty == .casual ? 4 : 14 }
+        if candidate.effect.newTally < 0 { score += 14 }
         // Landing exactly on 0 re-opens the 10-to-negative door for us.
         if candidate.effect.newTally == 0 { score += 8 }
 
@@ -165,13 +206,25 @@ struct AIPlayer {
                 $0.rank == .ace && $0.suit == candidate.card.suit && $0.id != candidate.card.id
             }
             if holdsMatchingAce {
-                score += difficulty == .ruthless ? 55 : 25
+                score += 25
             } else {
                 // Still worth it as a finisher if only one opponent stands and
                 // their well is spent.
                 let opponents = state.activePlayers.filter { $0.id != player.id }
                 let allWellsDry = opponents.allSatisfy { $0.well.isEmpty }
-                score += allWellsDry && difficulty != .casual ? 20 : -35
+                if allWellsDry {
+                    score += 20
+                } else if difficulty.pressesTheTally && weapons.contains(.pinAtNinetyNine) {
+                    // A 9 pins the board at 99 and leaves the next player one
+                    // card: a 10, an Ace as one on a matching nine, or nothing.
+                    // The blanket -35 treated that as recklessness. It's the
+                    // strongest single move in the game against somebody who
+                    // has to find *two* legal plays, and merely a good one
+                    // against anybody the table has already read as short.
+                    score += pressingNineValue(candidate, player: player, state: state)
+                } else {
+                    score -= 35
+                }
             }
         }
 
@@ -196,9 +249,9 @@ struct AIPlayer {
         let isBrake = candidate.card.rank == .ten || candidate.card.rank == .ace
         let dives = candidate.effect.newTally < 0 && state.tally >= 0
         if dives {
-            score += difficulty == .casual ? 6 : 18
+            score += 18
         } else if state.tally < 45 {
-            if isBrake { score -= difficulty == .casual ? 2 : 9 }
+            if isBrake { score -= 9 }
             if candidate.card.rank == .jack || candidate.card.rank == .king { score += 3 }
         } else if state.tally > 80 && isBrake {
             // Late on, a brake is exactly the right card.
@@ -209,7 +262,11 @@ struct AIPlayer {
         // routine play wastes it (and holding it risks poisoning; sharp play
         // accepts that trade, ruthless play weighs the poison risk).
         if candidate.card.rank == .queen {
-            score -= difficulty == .ruthless ? 16 : 8
+            // Was 16 for ruthless and 8 for everyone else. Hoarding the most
+            // flexible card in the deck reads as cunning and measured as a loss:
+            // ruthless was the *weakest* tier on the ladder, below the one it
+            // was supposed to outrank, and this was part of why.
+            score -= 8
             if state.queensArePoisonous { score += 20 } // dump it before it's exiled
         }
 
@@ -220,11 +277,8 @@ struct AIPlayer {
         }
 
         // Don't leave ourselves with an unplayable hand: peek one step ahead and
-        // penalise lines that strand us. Sharp and ruthless only — this is the
-        // main thing that separates them from casual.
-        if difficulty != .casual {
-            score += Double(lookaheadBonus(candidate, player: player, state: state))
-        }
+        // penalise lines that strand us.
+        score += Double(lookaheadBonus(candidate, player: player, state: state))
 
         // Merciless plays at the person receiving the board rather than at the
         // board. Everything above is about what a card does *here*; this is
@@ -261,6 +315,43 @@ struct AIPlayer {
             }
         }
 
+        // Ruthless and above: keep the cards that get you out of trouble, and
+        // judge the hand by the boards it could still meet.
+        //
+        // These sit here rather than in the tier above because the ladder has to
+        // be *nested* to stay ordered. Ruthless used to differ from Sharp only by
+        // tweaked constants — a heavier lookahead, a hoarded Queen, a looser well
+        // gamble — and measured out as the weakest tier of the four. Constants
+        // tuned by taste don't compose into a ladder; capabilities do.
+        if difficulty.holdsItsOuts, weapons.contains(.hoardOuts) {
+            score += utilityHoardingPenalty(candidate, player: player, state: state)
+        }
+        // Reading the table and reading your own future are the same skill
+        // pointed in two directions, so they arrive together.
+        if difficulty.readsTheTable, weapons.contains(.foresight) {
+            score += returningBoardSurvival(candidate, player: player, state: state)
+        }
+
+        if difficulty.pressesTheTally {
+            if weapons.contains(.debt) {
+                score += debtBonus(candidate, player: player, state: state)
+            }
+            if weapons.contains(.voidHunt) {
+                score += voidHuntBonus(candidate, player: player, state: state)
+            }
+            if weapons.contains(.hardPressure) {
+                // The tier below prices a kill at 120 x its probability. At a
+                // pinned 99 that probability is about a third, so 40 points —
+                // while pinning the tally *costs* up to 74 points of headroom.
+                // The kill was priced below the comfort, which is precisely why
+                // no tier ever pushed anybody to 99: not a missing idea, an
+                // arithmetic one. This closes the gap, and because it scales
+                // with the real chance it stays quiet when there is no kill on.
+                let pressure = pressureOnNextPlayer(after: candidate, player: player, state: state)
+                score += pressure * killPressureWeight
+            }
+        }
+
         return score
     }
 
@@ -281,7 +372,7 @@ struct AIPlayer {
         if remaining.isEmpty { return 0 }
 
         let ratio = Double(survivors) / Double(remaining.count)
-        var bonus = Int(ratio * (difficulty == .ruthless ? 26 : 16))
+        var bonus = Int(ratio * 16)
         if survivors == 0 { bonus -= 30 } // never walk into a dead hand willingly
         return bonus
     }
@@ -299,21 +390,30 @@ struct AIPlayer {
         let odds = unseen.isEmpty ? 0 : Double(playable) / Double(unseen.count)
 
         switch difficulty {
-        case .casual:
-            // Impulsive: takes the gamble more often than it should.
-            return odds > 0.35
         case .sharp:
             return odds > 0.55
         case .ruthless:
-            // Weighs the board: with a tight tally a skip just defers the
-            // problem, so it accepts worse odds when the squeeze is on.
-            let squeezed = state.tally > 85 || state.suitLock != nil
-            return odds > (squeezed ? 0.45 : 0.6)
-        case .merciless:
+            // Was a pair of fixed thresholds that dropped to 0.45 "when the
+            // squeeze is on" — i.e. it accepted a 55% chance of elimination to
+            // avoid a skip, which costs two plays and no lives. Ruthless came
+            // out the *weakest* tier on the ladder, below the one it was meant
+            // to outrank, and this was the largest part of it.
+            //
+            // Now the same comparison the tiers above make: the well is worth it
+            // only when it beats the odds of surviving the skip instead.
+            return odds > survivalAfterSkipping(player: player, state: state)
+        case .merciless, .cutthroat:
             // Compares the two deaths rather than picking a threshold. A skip
             // costs two plays next turn, which on a board this tight is often
             // worse than the coin flip — so the bar moves with how survivable
             // the *next* turn looks, not with how the tally feels.
+            //
+            // A previous version had the pressing tier accept 12 points worse
+            // odds rather than skip under a lock, on the theory that skipping
+            // leaks which suit it is missing. Measured, that one line cost it
+            // 13 points of win rate — it was taking a coin flip on elimination
+            // to avoid giving away information worth a fraction of it. The
+            // cheapest mistake to make and the hardest to see by reading.
             let debtSurvival = survivalAfterSkipping(player: player, state: state)
             return odds > debtSurvival
         }
@@ -324,7 +424,6 @@ struct AIPlayer {
     private func snackooWorthTaking(player: PlayerState, state: GameState) -> Rank? {
         let ranks = Rules.snackooRanksInHand(for: player)
         guard let rank = ranks.first else { return nil }
-        if difficulty == .casual { return rank } // always fires — it's fun and free
         let playableNow = player.hand.filter { Rules.isPlayable($0, in: state) }.count
         // Hold the trio if the hand is already flexible and the deck is thin.
         if playableNow >= 4 && state.effectiveDrawCount < 8 { return nil }
@@ -455,6 +554,195 @@ struct AIPlayer {
         return "plays \(candidate.card.shortName)"
     }
 
+    /// The opportunistic weapons the pressing tier may use.
+    ///
+    /// Individually switchable because they had to be measured individually:
+    /// bundled together they made the tier *worse* than the one below it, and
+    /// there is no way to tell which one carries the loss by reading them.
+    struct PressingWeapons: OptionSet, Sendable {
+        let rawValue: Int
+        /// Press hardest at a player repaying a skip debt.
+        static let debt = PressingWeapons(rawValue: 1 << 0)
+        /// Re-lock the suit a player has already failed to follow.
+        static let voidHunt = PressingWeapons(rawValue: 1 << 1)
+        /// Treat a 9 as a finisher rather than a last resort.
+        static let pinAtNinetyNine = PressingWeapons(rawValue: 1 << 2)
+        /// Keep 4s, Jacks, 10s, Aces and Queens back for the squeeze.
+        static let hoardOuts = PressingWeapons(rawValue: 1 << 3)
+        /// Judge a hand by the boards it could still answer, not just this one.
+        static let foresight = PressingWeapons(rawValue: 1 << 4)
+        /// Price a kill at what it is actually worth.
+        static let hardPressure = PressingWeapons(rawValue: 1 << 5)
+
+        static let all: PressingWeapons = [
+            .debt, .voidHunt, .pinAtNinetyNine, .hoardOuts, .foresight, .hardPressure,
+        ]
+    }
+
+    // MARK: - Pressing
+
+    /// What a 9 is worth to a tier that presses.
+    ///
+    /// Pinning the board at 99 leaves the next player needing a 10, a Jack, a 4,
+    /// or the Ace that matches — a narrow door. It is a genuine risk, because the
+    /// board comes back around still pinned; so this prices the risk rather than
+    /// refusing the move.
+    private func pressingNineValue(_ candidate: Candidate, player: PlayerState, state: GameState) -> Double {
+        guard let next = nextActivePlayer(after: player, in: state, reversing: candidate.effect.reversesDirection)
+        else { return -20 }
+
+        var value = 44.0
+        // Someone repaying a skip has to find two legal plays out of a board
+        // with one door. That is close to a kill.
+        if next.owesExtraPlay { value += 62 }
+        // A spent well means being stuck is fatal rather than merely expensive.
+        if next.well.isEmpty { value += 26 }
+        // Short hands have fewer chances to hold the answer.
+        if next.hand.count <= 2 { value += 12 }
+
+        // Priced against our own exposure: we get the pinned board back if they
+        // survive it, so hold something that opens the door for us too.
+        let outs = player.hand.filter { $0.id != candidate.card.id }
+            .filter { $0.rank == .ten || $0.rank == .jack || $0.rank == .four || $0.rank == .queen }
+            .count
+        if outs == 0 { value -= 34 }
+
+        return value
+    }
+
+    /// A skip is a wound; this is the tier that reopens it.
+    ///
+    /// A player repaying a skip debt owes *two* legal plays on their next turn.
+    /// Every point of pressure therefore counts roughly twice, and a board they
+    /// can only half-answer finishes them where a comfortable one would not.
+    private func debtBonus(_ candidate: Candidate, player: PlayerState, state: GameState) -> Double {
+        guard let next = nextActivePlayer(after: player, in: state, reversing: candidate.effect.reversesDirection),
+              next.owesExtraPlay
+        else { return 0 }
+
+        let pressure = pressureOnNextPlayer(after: candidate, player: player, state: state)
+        // Doubling the requirement roughly squares the chance of failing it.
+        var bonus = pressure * 90
+        // Sending a debt-payer to a spent well is the cleanest kill in the game.
+        if next.well.isEmpty { bonus += pressure * 40 }
+        return bonus
+    }
+
+    /// Lock the suit they already told you they haven't got.
+    ///
+    /// When a player skips under a lock they announce, publicly, that they hold
+    /// nothing in that suit, no Queen, and nothing matching the rank showing.
+    /// Naming that suit again is the single most direct way to put them back in
+    /// the same corner — and against a debt-payer it usually ends them.
+    private func voidHuntBonus(
+        _ candidate: Candidate, player: PlayerState, state: GameState
+    ) -> Double {
+        guard difficulty.huntsTheVoid,
+              candidate.effect.effectiveRank == .eight,
+              let naming = candidate.declaration.lockSuit
+        else { return 0 }
+
+        // Deliberately not "the next player" alone. An earlier version asked
+        // only whoever plays next and silently never fired — the seat lookup it
+        // depended on disagreed with the table in exactly the position this is
+        // for. Naming a suit an opponent is void in is worth something whoever
+        // they are, so score every opponent that has shown the hole and weight
+        // by how soon they have to answer it.
+        let order = seatingOrderAfter(player, in: state, reversing: candidate.effect.reversesDirection)
+        var bonus = 0.0
+        for (distance, opponent) in order.enumerated() where opponent.skippedUnderLock == naming {
+            // The player immediately after us has to answer this card; anyone
+            // further round may never see the lock at all.
+            let immediacy = distance == 0 ? 1.0 : 0.35
+            var value = 52.0
+            if opponent.owesExtraPlay { value += 30 }
+            if opponent.well.isEmpty { value += 16 }
+            bonus += value * immediacy
+        }
+        return bonus
+    }
+
+    /// Active opponents in the order they'll have to answer, nearest first.
+    private func seatingOrderAfter(
+        _ player: PlayerState, in state: GameState, reversing: Bool
+    ) -> [PlayerState] {
+        guard let start = state.index(of: player.id) else { return [] }
+        let step = (reversing ? -state.direction : state.direction) >= 0 ? 1 : -1
+        let count = state.players.count
+        var result: [PlayerState] = []
+        var index = start
+        for _ in 0..<count {
+            index = ((index + step) % count + count) % count
+            let seat = state.players[index]
+            if seat.id != player.id && !seat.isEliminated { result.append(seat) }
+        }
+        return result
+    }
+
+    /// How well the hand we'd be left with answers the board when it comes back.
+    ///
+    /// Every other term here judges a card by what it does to *this* board. But
+    /// the board returns, two or three plays later and almost always tighter,
+    /// and the hand that meets it is whatever is left after this decision. A
+    /// player who never asks that question spends its 4s and Jacks while they
+    /// are merely convenient and meets the squeeze holding three number cards.
+    private func returningBoardSurvival(
+        _ candidate: Candidate, player: PlayerState, state: GameState
+    ) -> Double {
+        let remaining = player.hand.filter { $0.id != candidate.card.id }
+        guard !remaining.isEmpty else { return 0 }
+
+        // Weighted toward a tight return: a hand that only answers a quiet board
+        // is a hand that loses.
+        let futures: [(tally: Int, weight: Double)] = [
+            (55, 0.6), (70, 0.9), (82, 1.3), (90, 1.6), (95, 1.8), (Rules.ceiling, 2.0),
+        ]
+
+        var answered = 0.0
+        var total = 0.0
+        for future in futures {
+            total += future.weight
+            var board = state
+            board.tally = future.tally
+            board.forcedNegativeNext = false
+            board.pendingNineSuit = nil
+            // Deliberately without the suit lock: we're asking what the hand can
+            // do about the *tally*, and a lock we can't predict would swamp it.
+            board.suitLock = nil
+            if remaining.contains(where: { Rules.isPlayable($0, in: board) }) {
+                answered += future.weight
+            }
+        }
+
+        return (answered / max(total, 0.001)) * 40
+    }
+
+    /// Stop spending the good cards on ordinary turns.
+    ///
+    /// 4s, Jacks, 10s, Aces and Queens are the cards that play from almost any
+    /// board — they are what a hand is *worth* when the squeeze comes. Spending
+    /// one while an ordinary card would have done the same job trades a future
+    /// escape for nothing, and it is the most visible weakness in the lower
+    /// tiers: by the time the tally is dangerous their hand is three number
+    /// cards and a prayer.
+    private func utilityHoardingPenalty(_ candidate: Candidate, player: PlayerState, state: GameState) -> Double {
+        let utility: Set<Rank> = [.four, .jack, .ten, .ace, .queen]
+        guard utility.contains(candidate.card.rank) else { return 0 }
+
+        // Cheap when the board is already desperate — that's what they're for.
+        if state.tally > 82 { return 0 }
+        // Or when they're the only thing that plays at all.
+        let alternatives = player.hand
+            .filter { $0.id != candidate.card.id && !utility.contains($0.rank) }
+            .filter { Rules.isPlayable($0, in: state) }
+        if alternatives.isEmpty { return 0 }
+
+        // Scaled by how early it is: burning a Jack at a tally of 12 is worse
+        // than burning one at 70.
+        let earliness = Double(max(0, 82 - state.tally)) / 82.0
+        return -26 * earliness
+    }
+
     // MARK: - Choosing a well
 
     /// Which two positions to bank face-down.
@@ -468,12 +756,11 @@ struct AIPlayer {
     func chooseWellSlots(dealtCount: Int, size: Int = Rules.wellSize) -> [Int] {
         guard dealtCount > size else { return Array(0..<max(0, dealtCount)) }
         switch difficulty {
-        case .casual: return Array(0..<size)                       // off the top
         case .sharp: return Array((dealtCount - size)..<dealtCount) // off the bottom
         case .ruthless:                                             // from the middle
             let start = max(0, (dealtCount - size) / 2)
             return Array(start..<(start + size))
-        case .merciless:                                            // off the end
+        case .merciless, .cutthroat:                                // off the end
             return Array((dealtCount - size)..<dealtCount)
         }
     }
@@ -488,18 +775,18 @@ struct AIPlayer {
     /// player banks two of three — no choice at all. Deal nine and they pick the
     /// two they actually want.
     ///
-    /// So a tight deal isn't just a small hand, it's a denial of a decision.
-    /// Ruthless deals tight for exactly that reason; casual deals generously
-    /// because it's more fun that way.
+    /// So a tight deal isn't just a small hand, it's a denial of a decision, and
+    /// every tier here deals tight for exactly that reason. Sharp is the only one
+    /// that leaves anybody a real choice.
     func preferredDeal(maxCardsDealt: Int) -> Int {
         let low = Rules.minCardsDealt
         let high = max(low, maxCardsDealt)
         let wanted: Int
         switch difficulty {
-        case .casual: wanted = 9    // a cushion of seven, and a real pick
         case .sharp: wanted = 7     // five, decaying to the sustaining three
         case .ruthless: wanted = 5  // straight to three, and a thin choice
         case .merciless: wanted = 5 // same: starve the table of well choice
+        case .cutthroat: wanted = 5 // same
         }
         return min(high, max(low, wanted))
     }
@@ -510,10 +797,11 @@ struct AIPlayer {
     /// character and keeps the table readable.
     var thinkingDelay: ClosedRange<Double> {
         switch difficulty {
-        case .casual: return 0.45...0.85
         case .sharp: return 0.6...1.1
         case .ruthless: return 0.8...1.5
         case .merciless: return 0.7...1.3
+        // Barely pauses. It has already worked out what it is doing to you.
+        case .cutthroat: return 0.55...1.0
         }
     }
 }
