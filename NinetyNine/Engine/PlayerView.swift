@@ -136,6 +136,16 @@ extension GameState {
 
     /// Produce the view for one player.
     ///
+    /// Every other player, in clockwise seating order starting from the seat
+    /// after yours. Order only — no redaction happens here.
+    static func seatedFromYou(_ players: [PlayerState], you playerID: String) -> [PlayerState] {
+        guard let start = players.firstIndex(where: { $0.id == playerID }) else {
+            return players.filter { $0.id != playerID }
+        }
+        let count = players.count
+        return (1..<count).map { players[(start + $0) % count] }
+    }
+
     /// This is the security boundary of multiplayer. Everything hidden is
     /// reduced to a count *here*, before serialisation — not filtered later in
     /// the UI, where forgetting one field would silently leak cards.
@@ -155,8 +165,22 @@ extension GameState {
             yourHandCap: you?.handCap ?? cardsDealt,
             youOweExtraPlay: you?.owesExtraPlay ?? false,
             youAreEliminated: you?.isEliminated ?? false,
-            opponents: players
-                .filter { $0.id != playerID }
+            // Rotated to start at the seat clockwise-after you, not left at the
+            // table's absolute order.
+            //
+            // Absolute order meant the row's ends had no fixed meaning: with the
+            // same direction of play, "next" landed on the left of the row or the
+            // right of it purely according to which seat you happened to hold. So
+            // the arrows on the tally ring — which are a statement about
+            // rotation — could not be read against the row at all, and pointed
+            // at nobody in particular.
+            //
+            // Rotated, the mapping is fixed and learnable: clockwise means read
+            // the row left to right and the next player is the leftmost; counter-
+            // clockwise means read it right to left. Deliberately keyed to the
+            // seating and *not* to the current direction, so a 4 changes which
+            // end you read from without making everybody swap places.
+            opponents: Self.seatedFromYou(players, you: playerID)
                 .map { other in
                     OpponentView(
                         id: other.id,

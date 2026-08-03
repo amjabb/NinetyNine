@@ -299,5 +299,17 @@ struct RuleSection: Identifiable {
                 "An eliminated player's cards are shuffled back into the deck, and play continues without them.",
             ]
         ),
+        RuleSection(
+            id: "direction",
+            title: "Reading the table",
+            glyph: "arrow.triangle.2.circlepath",
+            points: [
+                "The arrows set into the tally ring show which way play is going.",
+                "Clockwise, read the opponents left to right — the next player is the one on the left.",
+                "Counter-clockwise, read them right to left, and the next player is on the right.",
+                "NEXT always marks whoever plays after the current player, so you never have to work it out.",
+                "A 4 flips the arrows. Nobody changes seats — you just read the row from the other end.",
+            ]
+        ),
     ]
 }
