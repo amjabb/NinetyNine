@@ -72,8 +72,19 @@ print(f"wrote {count} screenshots")
 PY
 
 # Only now is it safe to replace the previous set.
-if [ -z "$(ls -A "$STAGING" 2>/dev/null)" ]; then
-  echo "Capture produced no screenshots — leaving $OUT untouched." >&2
+#
+# The bar is the *full* set, not a non-empty one. An earlier version checked
+# only that something had been produced, so a run that captured nine of ten —
+# which the test suite then reported as a pass — quietly replaced a complete set
+# of App Store screenshots with an incomplete one.
+EXPECTED=10
+ACTUAL="$(ls -1 "$STAGING"/*.png 2>/dev/null | wc -l | tr -d ' ')"
+if [ "$ACTUAL" -lt "$EXPECTED" ]; then
+  echo "Capture produced $ACTUAL of $EXPECTED screenshots — leaving $OUT untouched." >&2
+  echo "Missing:" >&2
+  for n in 1 2 3 4 5 6 7 8 9 10; do
+    ls "$STAGING"/store-$n-*.png > /dev/null 2>&1 || echo "  store-$n-*" >&2
+  done
   exit 1
 fi
 rm -rf "$OUT"

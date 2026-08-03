@@ -89,10 +89,15 @@ final class ScreenshotTests: XCTestCase {
         // Capture the declaration sheet on turn one, where the tally is 0 and
         // every card is legal — so an Ace, an 8, or a Queen in hand is guaranteed
         // to open it. Waiting for one to turn up mid-game left this shot to luck.
+        //
+        // Redeal until one turns up. A single retry left this to a coin-flip a
+        // hand of five loses about one time in twenty — which is exactly how the
+        // iPad slot ended up shipping nine screenshots instead of ten, with the
+        // capture reporting success.
         var capturedSheet = captureDeclarationSheet()
-        if !capturedSheet, app.buttons["Rematch"].exists == false {
-            // Deal again and try once more; a 6-card hand holds at least one of
-            // those ranks the large majority of the time.
+        var redeals = 0
+        while !capturedSheet, redeals < 4, !app.buttons["Rematch"].exists {
+            redeals += 1
             app.buttons["Pause"].tap()
             // BrassButton composes its label from title + subtitle, so the pause
             // menu's button reads "SDQ, Self Disqualify" rather than "SDQ".
@@ -180,11 +185,15 @@ final class ScreenshotTests: XCTestCase {
             capturedOutcome = true
         }
 
-        // Report what was and wasn't captured, so a missing shot is visible in the
-        // log rather than silently absent.
-        XCTContext.runActivity(named: "capture summary") { _ in
-            print("SHOTS captured: sheet=\(capturedSheet) pressure=\(capturedTension) outcome=\(capturedOutcome)")
-        }
+        // Fail on a missing shot rather than reporting it.
+        //
+        // This used to print a summary and pass. A run that captured nine of ten
+        // therefore looked identical to a complete one, and the capture script
+        // — which only checked that *something* had been produced — replaced a
+        // full set of App Store screenshots with the short one.
+        XCTAssertTrue(capturedSheet, "never captured the declaration sheet")
+        XCTAssertTrue(capturedTension, "never captured the table under pressure")
+        XCTAssertTrue(capturedOutcome, "never captured the outcome screen")
     }
 
     // MARK: - Helpers
