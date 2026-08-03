@@ -14,12 +14,25 @@ struct NinetyNineApp: App {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-uitest-reset") {
             Records.shared.resetAll()
+            // Wipe the domain rather than resetting a list of names.
+            //
+            // The list version rots silently: every setting added since it was
+            // written keeps whatever the last manual run left behind. Adding
+            // "bank wells automatically" and leaving it on in the Simulator was
+            // enough to make two pass-and-play tests fail, in a run whose only
+            // other change was the version number.
+            if let domain = Bundle.main.bundleIdentifier {
+                UserDefaults.standard.removePersistentDomain(forName: domain)
+            }
+            // Then pin the handful the tests actually depend on, so their
+            // starting table doesn't move if a default is ever retuned.
             Settings.shared.opponentCount = 2
             Settings.shared.difficulty = .sharp
             Settings.shared.cardsDealt = 7
             Settings.shared.coachingEnabled = true
             Settings.shared.localPlayerCount = 3
             Settings.shared.localPlayerNames = []
+            Settings.shared.autoAssignWells = false
         }
         // Store screenshots should show a played-in record rather than a row of
         // zeroes, so the capture run seeds a plausible history.

@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.7` (`MARKETING_VERSION`) / `9` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.8` (`MARKETING_VERSION`) / `10` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,19 +28,19 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.7 (build 9)
+## What's New — version 1.8 (build 10)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
 none of it. The store text is cumulative. The TestFlight note is the delta
-from 1.6.
+from 1.7.
 
 ### App Store — "What's New in This Version"
 
 ```
 AN OPPONENT THAT PLAYS AT YOU
 
-Merciless is a new hardest difficulty, and it works differently from the rest.
+Merciless is the hardest difficulty, and it works differently from the rest.
 The others weigh the board. This one weighs *you*: before every card it works
 out how likely the next player is to be left with nothing legal — from what's
 already been played, how many cards they're holding, whether they owe two from a
@@ -62,6 +62,10 @@ Everything the dealer deals goes to your hand, and before a card is played you
 bury two of it face down. You don't get to look. When you're finally forced to
 open it, shake the phone to shuffle the two first, the way you would at a table.
 
+Playing pass-and-play? You can have the app bank everyone's well instead, and
+skip a lap of the table before the first card. The pick is face down either way,
+so nothing is given up.
+
 THE LOCK IS SURVIVABLE, THE FLOOR ISN'T
 
 Follow the locked suit, or answer the card — play the same rank as the one face
@@ -81,29 +85,28 @@ ALSO NEW SINCE 1.0
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 1.7 (build 9)
+### TestFlight — test notes for 1.8 (build 10)
 
 ```
-NEW HARDEST DIFFICULTY: Merciless. Ruthless is now the middle tier. Merciless
-beats Ruthless about 68% of the time over 60 games — please tell me if it still
-feels beatable, and whether it feels like it's cheating (it isn't; it sees the
-discard pile, its own hand, and everyone's hand counts, same as you).
+NEW: pass-and-play can bank everyone's well automatically. It's a switch on the
+setup screen, off by default. The opening lap costs a hand-off per player for a
+decision made face down, so the app can just pick — it chooses two positions at
+random, exactly as blind as you are.
 
-NEW RULE: a 10 goes negative from any tally. Only climbing back out still has to
-land on exactly 0.
+Fixed since 1.7:
+• The Snackoo celebration never showed the cards being snackooed. The engine and
+  the view model both had them; the table built the celebration without passing
+  them, and an empty default meant it compiled and showed nothing. It also holds
+  longer now — two seconds was enough to notice a Snackoo, not to read it.
+• The direction arrows in the tally ring weren't animating. They are now, and
+  they keep moving during other animations rather than parking.
 
-Fixed since 1.6:
-• The draw animation showed two well cards when only one was left. The pick
-  screen was fixed last build; this was a second, separate place with the same
-  symptom, which is why it survived.
-
-Changed on the table:
-• Direction is drawn into the tally ring as arrows rather than written in a
-  corner.
-• The locked suit's pip is about twice the size.
-• Opponent names are bigger, and NEXT marks whoever plays after the current
-  player — worth checking that "owes 2" is now readable at a glance.
-• The last few cards played stay fanned behind the live one.
+Changed:
+• Ruthless got stronger. Two recent rule changes had quietly made its strategy
+  obsolete — it was still paying to lock a suit, which is now escapable by any
+  card matching the rank showing, and still hoarding 10s waiting to reach zero
+  before going negative, which no longer needs the wait. It beats Casual about
+  58% of the time; Merciless beats Ruthless about 61%.
 
 WORTH KNOWING: refuses online matches started before 1.4.
 
