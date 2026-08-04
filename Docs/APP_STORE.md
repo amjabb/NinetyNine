@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.8` (`MARKETING_VERSION`) / `10` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `1.9` (`MARKETING_VERSION`) / `11` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,50 +28,53 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.8 (build 10)
+## What's New — version 1.9 (build 11)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
 none of it. The store text is cumulative. The TestFlight note is the delta
-from 1.7.
+from 1.8.
 
 ### App Store — "What's New in This Version"
 
 ```
-AN OPPONENT THAT PLAYS AT YOU
+FOUR OPPONENTS, AND THE HARDEST ONE PLAYS AT YOU
 
-Merciless is the hardest difficulty, and it works differently from the rest.
-The others weigh the board. This one weighs *you*: before every card it works
-out how likely the next player is to be left with nothing legal — from what's
-already been played, how many cards they're holding, whether they owe two from a
-skip, and whether their well is spent. Then it plays the card that hurts most.
+Cutthroat is the new top difficulty. It presses the tally when pressing is a
+kill rather than a habit — hardest of all at somebody repaying a skip, who owes
+two legal plays and can only find one. It remembers the suit you failed to
+follow and names it again. And it keeps its 4s, Jacks and 10s back for the
+squeeze instead of spending them while they're merely convenient.
 
-It counts, it doesn't cheat. It knows what's on the table and how many cards you
-hold, the same as you do.
-
-A SMALLER HAND
-
-You hold three cards now, not five. Three is barely a hand: there is rarely a
-safe card and a brake and an out all at once, so most turns are a choice between
-bad options — and the tally climbs faster, because nobody can sit on a 10 waiting
-for the right moment.
+Below it: Merciless counts what's gone and plays at whoever is next, Ruthless
+keeps the cards that get it out of trouble, Sharp defends its margin. They don't
+cheat — they see the discard pile, their own hand, and everyone's card count,
+exactly as you do.
 
 A WELL YOU BUILD YOURSELF, BLIND
 
 Everything the dealer deals goes to your hand, and before a card is played you
-bury two of it face down. You don't get to look. When you're finally forced to
-open it, shake the phone to shuffle the two first, the way you would at a table.
+bury two of it face down. You don't get to look, and the deal is left in the
+shuffle's order — the position tells you nothing about the card behind it. When
+you're finally forced to open the well, shake the phone to shuffle the two
+first, the way you would at a table.
 
-Playing pass-and-play? You can have the app bank everyone's well instead, and
-skip a lap of the table before the first card. The pick is face down either way,
-so nothing is given up.
+Pass-and-play tables can have the app bank everyone's well instead, and skip a
+lap of the table before the first card.
+
+A TABLE YOU CAN READ
+
+The arrows set into the tally ring show which way play is going, and now they
+point at something: clockwise, the next player is the opponent on the left;
+counter-clockwise, the one on the right. A 4 flips which end you read from
+without anybody changing seats.
 
 THE LOCK IS SURVIVABLE, THE FLOOR ISN'T
 
 Follow the locked suit, or answer the card — play the same rank as the one face
-up, whatever suit, and the lock moves to yours. And a 10 now drops the tally
-below zero from wherever it stands; it's climbing back out that has to land on
-exactly nothing.
+up, whatever suit, and the lock moves to yours. And a 10 drops the tally below
+zero from wherever it stands; it's climbing back out that has to land on exactly
+nothing.
 
 ALSO NEW SINCE 1.0
 
@@ -79,35 +82,38 @@ ALSO NEW SINCE 1.0
 • Pass and play for two to six on one device, the screen covering itself between
   turns — including while each player buries their well.
 • Press and hold a card to play every copy of it as one turn.
-• The tally wheel points the way play is going; the table says who's next and
-  who owes two.
+• You hold three cards, so most turns are a choice between bad options.
 • The last few cards played stay on the table.
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 1.8 (build 10)
+### TestFlight — test notes for 1.9 (build 11)
 
 ```
-NEW: pass-and-play can bank everyone's well automatically. It's a switch on the
-setup screen, off by default. The opening lap costs a hand-off per player for a
-decision made face down, so the app can just pick — it chooses two positions at
-random, exactly as blind as you are.
+FIXED, AND IT MATTERED: the blind well pick wasn't blind. Hands were sorted
+before you chose, and you choose by position — so slot 1 was always your lowest
+card and the last slot your highest. Anyone who noticed could bank their two
+highest every game. Sorting now happens after every well is buried.
 
-Fixed since 1.7:
-• The Snackoo celebration never showed the cards being snackooed. The engine and
-  the view model both had them; the table built the celebration without passing
-  them, and an empty default meant it compiled and showed nothing. It also holds
-  longer now — two seconds was enough to notice a Snackoo, not to read it.
-• The direction arrows in the tally ring weren't animating. They are now, and
-  they keep moving during other animations rather than parking.
+NEW TOP DIFFICULTY: Cutthroat. Please tell me whether it feels like a harder
+opponent or just a meaner one. Honest numbers: three-handed it takes about 48%
+against Sharp or Ruthless where a fair share is 33%, but only about 35% against
+Merciless — a real edge over the tier below, not a decisive one.
 
-Changed:
-• Ruthless got stronger. Two recent rule changes had quietly made its strategy
-  obsolete — it was still paying to lock a suit, which is now escapable by any
-  card matching the rank showing, and still hoarding 10s waiting to reach zero
-  before going negative, which no longer needs the wait.
+Also fixed on the ladder: Ruthless was the *weakest* of the four tiers, below
+Sharp. It had never been measured against Sharp — only both against Casual,
+which is now gone. It was accepting a 55% chance of elimination rather than take
+a free skip.
 
-WORTH KNOWING: refuses online matches started before 1.4.
+THE ARROWS NOW POINT AT SOMEBODY. The opponent row used to be in the table's
+absolute seating order, so with the same direction of play "NEXT" landed on the
+left of the row or the right depending only on which seat you held. The row now
+starts at the seat clockwise-after you: clockwise, next is leftmost; counter-
+clockwise, next is rightmost. Seats don't move when a 4 reverses play — worth
+checking that feels stable rather than confusing.
+
+WORTH KNOWING: refuses online matches started before 1.9 (the difficulty tiers
+changed, so old match data would replay into a different game).
 
 STILL UNTESTED: two-device Game Center has never run against a real network.
 ```
