@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `2.0` (`MARKETING_VERSION`) / `12` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `2.1` (`MARKETING_VERSION`) / `13` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,7 +28,7 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 2.0 (build 12)
+## What's New — version 2.1 (build 13)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
@@ -93,7 +93,7 @@ ALSO NEW SINCE 1.0
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 2.0 (build 12)
+### TestFlight — test notes for 2.1 (build 13)
 
 ```
 BOTH OF THESE WERE REPORTED, AND BOTH WERE THE SAME PROBLEM: a loss you can't
