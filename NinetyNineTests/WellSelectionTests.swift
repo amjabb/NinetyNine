@@ -499,7 +499,7 @@ final class UnspentWellRevealTests: XCTestCase {
                 return false
             }) else { continue }
 
-            guard case .playerEliminated(let who, _, _, let unspent) = elimination else {
+            guard case .playerEliminated(let who, _, _, let unspent, _) = elimination else {
                 XCTFail("Unexpected event shape")
                 return
             }
@@ -533,7 +533,7 @@ final class UnspentWellRevealTests: XCTestCase {
         engine._replaceStateForTesting(state)
 
         let events = try engine.forfeit(by: id)
-        guard case .playerEliminated(_, _, _, let unspent)? = events.first(where: {
+        guard case .playerEliminated(_, _, _, let unspent, _)? = events.first(where: {
             if case .playerEliminated = $0 { return true }
             return false
         }) else {

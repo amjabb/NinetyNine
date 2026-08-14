@@ -336,6 +336,22 @@ final class MatchCoordinator: ObservableObject {
         refreshView()
     }
 
+    /// Strand the viewing player: a play owed, nothing legal, no well left.
+    /// The one position with no decision in it.
+    func _forceStrandedForTesting(hand: [Card], tally: Int) {
+        guard let engine, let id = viewingPlayerID else { return }
+        var state = engine.state
+        guard let seat = state.index(of: id) else { return }
+        state.players[seat].hand = hand
+        state.players[seat].well = []
+        state.currentPlayerIndex = seat
+        state.tally = tally
+        state.turnStartedWithDebt = true
+        state.playsRemainingThisTurn = 1
+        engine._replaceStateForTesting(state)
+        refreshView()
+    }
+
     /// Put a known hand in front of the viewing player. Reproducing a reported
     /// hand by shuffling for it is a waiting game; this states it.
     func _forceHandForTesting(_ hand: [Card], tally: Int) {

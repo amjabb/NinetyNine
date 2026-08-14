@@ -70,6 +70,11 @@ final class GameViewModel: ObservableObject {
     private let settings: Settings
     private var hasRecordedEnd = false
     private var isDrivingAI = false
+    /// Guards the automatic resolution of a stranded seat against re-entry —
+    /// it runs from several places, each of which can fire while it's waiting.
+    private var isResolvingStranded = false
+    private var hasAppliedStrandedUITestPosition = false
+    private var hasAppliedPressureUITestPosition = false
     /// Solo only: the single human whose achievements are being tracked. In
     /// pass-and-play nobody's lifetime record is touched — it isn't one person's
     /// game, and crediting the device owner with a shared win would be a lie.
@@ -113,6 +118,13 @@ final class GameViewModel: ObservableObject {
         /// The other well card, turned over after an unplayable one has ended
         /// somebody's game. Shown before the loss is announced.
         case whatYouMissed(card: Card, playerID: String)
+        /// The hand you were holding when it ended, held on screen for a beat.
+        ///
+        /// A loss you can't see is a loss you don't believe. The engine sweeps
+        /// an eliminated player's cards back into the deck as part of the
+        /// elimination, so by the time anything rendered the hand was already
+        /// empty and the game simply announced the result.
+        case nothingPlayed(cards: [Card], playerID: String)
     }
 
     struct PendingChoice: Identifiable, Equatable {
@@ -776,6 +788,13 @@ final class GameViewModel: ObservableObject {
         Task { await submit(.concede, by: actor) {} }
     }
 
+    /// The stranded seat's own resolution, awaited rather than fired off — the
+    /// caller is pacing it and needs to know when the table has caught up.
+    private func concedeStranded() async {
+        guard let actor = viewingPlayerID else { return }
+        await submit(.concede, by: actor) {}
+    }
+
     func acknowledgeHandoff() {
         Haptics.shared.play(.turnStart)
         coordinator.acknowledgeHandoff()
@@ -980,13 +999,82 @@ final class GameViewModel: ObservableObject {
         syncFromCoordinator()
         refreshHandoff()
 
-        if isYourTurn, options.isStranded {
-            announce(
-                headline: "Nowhere to go",
-                detail: "No legal card, no well, and a play owed.",
-                tone: .bad
-            )
-        }
+        applyStrandedUITestPositionIfRequested()
+        applyPressureUITestPositionIfRequested()
+        await resolveStrandedSeatIfNeeded()
+    }
+
+    /// Drop the viewing player into a dead position, once, when the app was
+    /// launched with `-uitest-stranded`. Inert in every other run.
+    private func applyStrandedUITestPositionIfRequested() {
+        // The body is DEBUG-only because the coordinator seam it calls is. Left
+        // unguarded this compiles cleanly for every test run — which are all
+        // Debug — and fails the Release archive, i.e. at exactly the moment
+        // there's a build to ship.
+        #if DEBUG
+        guard UITestStranded.enabled, !hasAppliedStrandedUITestPosition else { return }
+        guard let view, !view.youOweAWell, !isDealing, !coordinator.isOver else { return }
+        hasAppliedStrandedUITestPosition = true
+        // Sevens and Kings both bust from 99, so the hand is dead and the refill
+        // can't rescue it either.
+        let dead = Deck.standard().filter { $0.rank == .seven || $0.rank == .king }
+        coordinator._forceStrandedForTesting(
+            hand: Array(dead.prefix(2)), tally: Rules.ceiling
+        )
+        syncFromCoordinator()
+        #endif
+    }
+
+    /// Raise the tally to a dangerous number, once, when launched with
+    /// `-uitest-pressure`. Inert in every other run.
+    private func applyPressureUITestPositionIfRequested() {
+        #if DEBUG
+        guard UITestPressure.enabled, !hasAppliedPressureUITestPosition else { return }
+        guard let view, !view.youOweAWell, !isDealing, !coordinator.isOver, isYourTurn else { return }
+        // Wait for a few real cards to be played first. Forcing the tally at the
+        // deal produced a board reading 92 with an empty discard pile — which is
+        // not a position this game can reach, and would have gone to the App
+        // Store as a screenshot of something that cannot happen.
+        guard view.discardPile.count >= 6 else { return }
+        hasAppliedPressureUITestPosition = true
+        // The player's own cards, kept — only the board is moved. A shot of a
+        // hand nobody was dealt would be a different kind of lie.
+        coordinator._forceHandForTesting(view.yourHand, tally: 92)
+        syncFromCoordinator()
+        #endif
+    }
+
+    /// End a turn that has no moves left in it, without asking.
+    ///
+    /// Being stranded means no legal card, no well, and a play owed — there is
+    /// exactly one thing that can happen next. Offering "SDQ" there presented it
+    /// as a decision and then waited, which is a button whose only function is
+    /// to make you agree to something already true. Worse in pass-and-play,
+    /// where the table sits waiting for a player to concede a game they have
+    /// already lost.
+    ///
+    /// So it resolves itself, after a beat long enough to read the board and see
+    /// why. The button remains in the pause menu, where conceding *is* a choice.
+    private func resolveStrandedSeatIfNeeded() async {
+        guard !isResolvingStranded else { return }
+        guard isYourTurn, options.isStranded, !coordinator.isOver else { return }
+        guard !isDealing, wellReveal == .idle, pendingChoice == nil,
+              pendingSet == nil, snackooMoment == nil, !awaitingHandoff
+        else { return }
+
+        isResolvingStranded = true
+        defer { isResolvingStranded = false }
+
+        announce(
+            headline: "Nowhere to go",
+            detail: "No legal card, no well, and a play owed.",
+            tone: .bad
+        )
+        Haptics.shared.play(.rejected)
+        try? await Task.sleep(for: .milliseconds(2_200))
+
+        guard isYourTurn, options.isStranded, !coordinator.isOver else { return }
+        await concedeStranded()
     }
 
     // MARK: - Event choreography
@@ -1001,6 +1089,14 @@ final class GameViewModel: ObservableObject {
     /// The shared log, for tests that care that a decision was *recorded* and
     /// not just applied — anything missing from here breaks replay.
     var _actionLogForTesting: [SubmittedAction] { coordinator.actionLog }
+
+    /// Strand the viewing player and let the view model notice, exactly as it
+    /// would after a real play left them with nothing.
+    func _forceStrandedForTesting(hand: [Card], tally: Int) {
+        coordinator._forceStrandedForTesting(hand: hand, tally: tally)
+        syncFromCoordinator()
+        Task { await driveAITurns() }
+    }
 
     func _settleForTesting(timeout: Duration = .seconds(20)) async {
         let deadline = ContinuousClock.now + timeout
@@ -1217,7 +1313,7 @@ final class GameViewModel: ObservableObject {
                 // follows immediately and says what it cost them.
                 withAnimation(Motion.drama) { wellReveal = .idle }
 
-            case .playerEliminated(let id, let reason, _, let unspentWell):
+            case .playerEliminated(let id, let reason, _, let unspentWell, let finalHand):
                 // Turn the card they didn't pick face up first. At a table this
                 // is automatic — you show the other one — and "what was the one
                 // I didn't take?" is the first thing anybody asks. Skipping it
@@ -1229,6 +1325,17 @@ final class GameViewModel: ObservableObject {
                     Haptics.shared.play(.cardLift)
                     SoundEngine.shared.play(.cardFlick, volume: 0.7)
                     try? await Task.sleep(for: .milliseconds(1_900))
+                    withAnimation(Motion.drama) { wellReveal = .idle }
+                }
+
+                // The hand that couldn't answer, held up before the verdict —
+                // for the player it happened to, who is owed the reason.
+                if id == viewingPlayerID, !finalHand.isEmpty {
+                    withAnimation(Motion.drama) {
+                        wellReveal = .nothingPlayed(cards: finalHand, playerID: id)
+                    }
+                    Haptics.shared.play(.rejected)
+                    try? await Task.sleep(for: .milliseconds(2_300))
                     withAnimation(Motion.drama) { wellReveal = .idle }
                 }
 

@@ -64,7 +64,14 @@ enum GameEvent: Equatable, Sendable {
     ///   Shown to the table before the loss is announced — at a real table you
     ///   turn the other one over, and "what was the one I didn't pick?" is the
     ///   first thing anybody asks.
-    case playerEliminated(id: String, reason: EliminationReason, rank: Int, unspentWell: [Card])
+    /// - Parameter finalHand: the cards they were holding when it ended. Captured
+    ///   before the sweep, because the whole point of a loss is being shown *why*
+    ///   — an announcement with no cards behind it reads as the game deciding
+    ///   rather than the hand deciding.
+    case playerEliminated(
+        id: String, reason: EliminationReason, rank: Int,
+        unspentWell: [Card], finalHand: [Card]
+    )
     case gameWon(by: String)
 
     enum SnackooKind: Equatable, Sendable {

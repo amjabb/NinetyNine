@@ -717,9 +717,11 @@ final class GameEngine {
         }
         note("\(state.players[seat].name) is out — \(reason.explanation)")
 
-        // Captured before the well is emptied: the UI turns the unspent card
-        // over so the player can see what they didn't pick.
+        // Captured before the sweep: the UI turns the unspent well card over so
+        // the player can see what they didn't pick, and shows the hand that
+        // couldn't answer the board. Both are gone a few lines below.
         let unspentWell = state.players[seat].well
+        let finalHand = state.players[seat].hand
 
         // Their cards go back into circulation.
         let returned = state.players[seat].hand + state.players[seat].well + state.players[seat].poisonPile
@@ -738,7 +740,8 @@ final class GameEngine {
         }
 
         events.append(.playerEliminated(
-            id: state.players[seat].id, reason: reason, rank: rank, unspentWell: unspentWell
+            id: state.players[seat].id, reason: reason, rank: rank,
+            unspentWell: unspentWell, finalHand: finalHand
         ))
 
         if state.activePlayers.count == 1, let winner = state.activePlayers.first {

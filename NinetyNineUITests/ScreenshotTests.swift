@@ -114,70 +114,61 @@ final class ScreenshotTests: XCTestCase {
             capturedSheet = captureDeclarationSheet()
         }
 
-        // Play on and grab the table once the tally is genuinely dangerous — a
-        // screenshot of a tally of 4 sells nothing.
-        var moves = 0
-        var capturedTension = false
-        while moves < 400 {
-            moves += 1
-            if app.buttons["Rematch"].exists { break }
+        // The tension shot, and the outcome after it.
+        //
+        // Previously this was *played* for: keep taking turns until the tally
+        // happened to reach 78. That was always luck, and it got worse once a
+        // stranded seat began ending its own turn rather than stalling — the
+        // player's game now finishes sooner, so the capture could run out of
+        // game before it ran out of patience. A shot that fails one run in three
+        // blocks a release one run in three.
+        //
+        // So the board is put under pressure directly, in a second launch. It is
+        // still the real app rendering a legal position with the player's own
+        // cards; only the waiting is gone.
+        app.terminate()
+        app.launchArguments = ["-uitest-reset", "-uitest-showcase", "-uitest-pressure"]
+        app.launch()
 
-            // Fallback: if turn one didn't hold a suitable card, take the sheet
-            // whenever one does appear later.
-            if !capturedSheet, isDeclarationSheetUp {
-                Thread.sleep(forTimeInterval: 0.6)
-                shot("store-8-declaration")
-                capturedSheet = true
-            }
+        XCTAssertTrue(playButton.waitForExistence(timeout: 10))
+        playButton.tap()
+        XCTAssertTrue(app.buttons["Deal"].waitForExistence(timeout: 5))
+        app.buttons["Deal"].tap()
+        app.buildAllWells()
+        XCTAssertTrue(app.otherElements["Tally"].waitForExistence(timeout: 12))
+
+        // Play on. The forced tally lands once a few real cards are on the pile,
+        // so a dangerous board arrives within a handful of turns rather than
+        // being waited for — but it is still played into, and the discard pile
+        // behind it is genuine. Forcing it at the deal produced a tally of 92
+        // above an empty pile, which is not a board this game can reach.
+        var capturedTension = false
+        var moves = 0
+        while moves < 260, !app.buttons["Rematch"].exists {
+            moves += 1
             if resolveDeclarationSheetIfPresent() { continue }
 
             if !capturedTension, let tally = currentTally, tally >= 78 {
-                Thread.sleep(forTimeInterval: 0.5)
+                Thread.sleep(forTimeInterval: 0.6)
                 shot("store-9-pressure")
                 capturedTension = true
             }
 
             guard isPlayersTurn else {
-                // Somebody at the well holds the screen for a few seconds.
-                // Checked here rather than at the top of the loop: resolving an
-                // identifier that isn't on screen costs seconds in XCUITest
-                // retries, so it must only run when nothing else was actionable.
-                if app.otherElements["well-reveal"].isHittable {
-                    Thread.sleep(forTimeInterval: 0.4)
-                } else {
-                    Thread.sleep(forTimeInterval: 0.2)
-                }
+                Thread.sleep(forTimeInterval: 0.25)
                 continue
             }
             if pickAWellCardIfAsked() { continue }
-
-            // While the declaration shot is still outstanding, go looking for it
-            // — play an Ace, an 8 or a Queen in preference to anything else.
-            // Leaving it to whatever the hand happened to hold missed the shot
-            // about a quarter of the time.
-            if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) {
-                continue
-            }
-
-            // Query each control only in the state where it exists. Polling for
-            // "The Well" every iteration races the opponents' turns, and
-            // resolving a query mid-transition throws rather than returning
-            // empty.
-            // Snackoo is deliberately absent from this list: it's optional, it
-            // comes and goes with the hand, and no store shot needs it — chasing
-            // it only made this capture race a button already withdrawing.
             if app.staticTexts["No legal card"].exists {
-                if tapFirstExisting(["The Well", "Skip", "No outs"]) { continue }
+                if tapFirstExisting(["The Well", "Skip"]) { continue }
             }
-            if !capturedSheet, tapAPlayableCard(preferringRanks: ["Ace", "Eight", "Queen"]) { continue }
             if tapAPlayableCard() { continue }
             Thread.sleep(forTimeInterval: 0.2)
         }
 
         // The move budget can run out while a game is still going — dramatic
-        // beats (well reveals, eliminations) hold the table for a second or two
-        // each. Give the game a chance to finish on its own before giving up on
-        // the outcome shot.
+        // beats hold the table for a second or two each. Give it a chance to
+        // finish on its own before giving up on the outcome shot.
         var capturedOutcome = false
         if app.buttons["Rematch"].waitForExistence(timeout: 60) {
             Thread.sleep(forTimeInterval: 1.2)

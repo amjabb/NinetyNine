@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `1.9` (`MARKETING_VERSION`) / `11` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `2.0` (`MARKETING_VERSION`) / `12` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,23 +28,23 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 1.9 (build 11)
+## What's New — version 2.0 (build 12)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
 none of it. The store text is cumulative. The TestFlight note is the delta
-from 1.8.
+from 1.9.
 
 ### App Store — "What's New in This Version"
 
 ```
 FOUR OPPONENTS, AND THE HARDEST ONE PLAYS AT YOU
 
-Cutthroat is the new top difficulty. It presses the tally when pressing is a
-kill rather than a habit — hardest of all at somebody repaying a skip, who owes
-two legal plays and can only find one. It remembers the suit you failed to
-follow and names it again. And it keeps its 4s, Jacks and 10s back for the
-squeeze instead of spending them while they're merely convenient.
+Cutthroat is the top difficulty. It presses the tally when pressing is a kill
+rather than a habit — hardest of all at somebody repaying a skip, who owes two
+legal plays and can only find one. It remembers the suit you failed to follow
+and names it again. And it keeps its 4s, Jacks and 10s back for the squeeze
+instead of spending them while they're merely convenient.
 
 Below it: Merciless counts what's gone and plays at whoever is next, Ruthless
 keeps the cards that get it out of trouble, Sharp defends its margin. They don't
@@ -54,7 +54,7 @@ exactly as you do.
 A WELL YOU BUILD YOURSELF, BLIND
 
 Everything the dealer deals goes to your hand, and before a card is played you
-bury two of it face down. You don't get to look, and the deal is left in the
+bury two of it face down. You don't get to look, and the deal stays in the
 shuffle's order — the position tells you nothing about the card behind it. When
 you're finally forced to open the well, shake the phone to shuffle the two
 first, the way you would at a table.
@@ -62,10 +62,16 @@ first, the way you would at a table.
 Pass-and-play tables can have the app bank everyone's well instead, and skip a
 lap of the table before the first card.
 
+LOSING IS SHOWN, NOT ANNOUNCED
+
+When there's no legal card and no well left, the game holds your hand up so you
+can see for yourself that nothing in it plays, and then ends the turn. It
+doesn't ask you to confirm a result you can't change.
+
 A TABLE YOU CAN READ
 
-The arrows set into the tally ring show which way play is going, and now they
-point at something: clockwise, the next player is the opponent on the left;
+The arrows set into the tally ring show which way play is going, and they point
+at something: clockwise, the next player is the opponent on the left;
 counter-clockwise, the one on the right. A 4 flips which end you read from
 without anybody changing seats.
 
@@ -87,35 +93,39 @@ ALSO NEW SINCE 1.0
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 1.9 (build 11)
+### TestFlight — test notes for 2.0 (build 12)
 
 ```
-FIXED, AND IT MATTERED: the blind well pick wasn't blind. Hands were sorted
-before you chose, and you choose by position — so slot 1 was always your lowest
-card and the last slot your highest. Anyone who noticed could bank their two
-highest every game. Sorting now happens after every well is buried.
+BOTH OF THESE WERE REPORTED, AND BOTH WERE THE SAME PROBLEM: a loss you can't
+see.
 
-NEW TOP DIFFICULTY: Cutthroat. Please tell me whether it feels like a harder
-opponent or just a meaner one. Honest numbers: three-handed it takes about 48%
-against Sharp or Ruthless where a fair share is 33%, but only about 35% against
-Merciless — a real edge over the tier below, not a decisive one.
+1) Eliminated mid-turn — you survived the well, still owed a play, and nothing
+   in hand was legal — the game went straight to the result. The engine sweeps
+   an eliminated hand back into the deck as part of the elimination, so by the
+   time anything drew, the cards were already gone. The hand now rides along on
+   the elimination and is held up for a couple of seconds first. Note it's the
+   hand you were holding *at the end*, which after a refill isn't the hand you
+   played from — tell me if you'd rather it were narrower.
 
-Also fixed on the ladder: Ruthless was the *weakest* of the four tiers, below
-Sharp. It had never been measured against Sharp — only both against Casual,
-which is now gone. It was accepting a 55% chance of elimination rather than take
-a free skip.
+2) The rulebook sections now open when you tap the arrow, or anywhere on the
+   row. They only responded to the title before — a Button's label is only
+   tappable where it draws, so the arrow (an 11-point glyph) and the gap beside
+   it were dead. Reported by a player.
 
-THE ARROWS NOW POINT AT SOMEBODY. The opponent row used to be in the table's
-absolute seating order, so with the same direction of play "NEXT" landed on the
-left of the row or the right depending only on which seat you held. The row now
-starts at the seat clockwise-after you: clockwise, next is leftmost; counter-
-clockwise, next is rightmost. Seats don't move when a 4 reverses play — worth
-checking that feels stable rather than confusing.
+3) The app icon's second 9 was subtly squashed. The icon was drawing the
+   numerals twice with a small offset between the copies, and on the second one
+   the seam fell across the counter and filled it in. Same wordmark, one shape.
 
-WORTH KNOWING: refuses online matches started before 1.9 (the difficulty tiers
-changed, so old match data would replay into a different game).
+4) The SDQ button on a stranded turn is gone. No legal card, no well, a play
+   owed: there was only ever one outcome, and asking you to press for it made
+   the whole table wait on a formality. It now explains and ends the turn on its
+   own. Conceding voluntarily still lives in the pause menu, where it is a real
+   choice.
+
+WORTH KNOWING: refuses online matches started before 1.9.
 
 STILL UNTESTED: two-device Game Center has never run against a real network.
+This is the last thing on the list that has never been exercised for real.
 ```
 
 ---

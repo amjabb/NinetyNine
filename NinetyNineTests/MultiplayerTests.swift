@@ -325,7 +325,7 @@ final class PlayerActionTests: XCTestCase {
         )
 
         XCTAssertTrue(events.contains { event in
-            if case .playerEliminated(let id, .forfeited, _, _) = event { return id == leaver }
+            if case .playerEliminated(let id, .forfeited, _, _, _) = event { return id == leaver }
             return false
         })
         XCTAssertTrue(try XCTUnwrap(engine.state.player(id: leaver)).isEliminated)

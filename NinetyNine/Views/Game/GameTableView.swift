@@ -235,16 +235,13 @@ struct GameTableView: View {
                     }
                 }
 
-                if showsStuck && options.isStranded {
-                    ActionButton(
-                        title: "SDQ",
-                        subtitle: "Self Disqualify",
-                        tint: Palette.danger,
-                        icon: "xmark.circle.fill"
-                    ) {
-                        viewModel.concede()
-                    }
-                }
+                // No SDQ button here on purpose.
+                //
+                // Being stranded is not a decision — no legal card, no well, a
+                // play owed — so a button offering the one thing that can happen
+                // is a prompt to agree with arithmetic. The view model ends the
+                // turn itself after a beat. Conceding voluntarily still lives in
+                // the pause menu, where it is a real choice.
             }
         }
         .animation(Motion.panel, value: viewModel.isYourTurn)
@@ -479,7 +476,8 @@ struct GameTableView: View {
     private var wellPlayerName: String {
         switch viewModel.wellReveal {
         case .choosing(let id, _), .rolling(let id, _), .revealed(_, _, let id),
-             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
+             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id),
+             .nothingPlayed(_, let id):
             return viewModel.participants.first { $0.id == id }?.name ?? ""
         case .idle:
             return ""
@@ -489,7 +487,8 @@ struct GameTableView: View {
     private var wellIsHuman: Bool {
         switch viewModel.wellReveal {
         case .choosing(let id, _), .rolling(let id, _), .revealed(_, _, let id),
-             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id):
+             .rescue(_, _, let id), .survived(_, let id), .whatYouMissed(_, let id),
+             .nothingPlayed(_, let id):
             return id == viewModel.viewingPlayerID
         case .idle:
             return false

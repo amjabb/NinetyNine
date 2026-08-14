@@ -88,6 +88,7 @@ struct WellRevealOverlay: View {
         case .rescue: return "It won't play — but it's your third."
         case .survived: return "It plays."
         case .whatYouMissed: return "This is what you left down there."
+        case .nothingPlayed: return "Nothing here plays."
         default: return "One card. Everything rides on it."
         }
     }
@@ -186,6 +187,20 @@ struct WellRevealOverlay: View {
                 .frame(width: 168)
                 .saturation(0.55)
 
+        case .nothingPlayed(let cards, _):
+            // The whole hand, fanned and face up. Small enough that three fit,
+            // dimmed because none of them were any use.
+            HStack(spacing: -26) {
+                ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                    FlippableCard(card: card, isFaceUp: true, isPlayable: false)
+                        .frame(width: 116)
+                        .saturation(0.5)
+                        .rotationEffect(.degrees(Double(index - (cards.count - 1)) * 4 + 6))
+                        .zIndex(Double(index))
+                }
+            }
+            .transition(.scale(scale: 0.7).combined(with: .opacity))
+
         case .revealed(let card, let playable, _):
             FlippableCard(card: card, isFaceUp: true, isPlayable: playable)
                 .frame(width: 168)
@@ -278,6 +293,21 @@ struct WellRevealOverlay: View {
             Text("Drawing…")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.ivoryDim)
+
+        case .nothingPlayed(let cards, _):
+            VStack(spacing: 8) {
+                Text(cards.count == 1 ? "YOUR LAST CARD" : "YOUR LAST \(cards.count)")
+                    .font(.system(size: 20, weight: .black, design: .serif))
+                    .tracking(2)
+                    .foregroundStyle(Palette.ivoryDim)
+                Text("Not one of them was legal, and the well is spent.")
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.ivory.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+            }
+            .transition(.opacity)
 
         case .whatYouMissed(let card, _):
             VStack(spacing: 8) {

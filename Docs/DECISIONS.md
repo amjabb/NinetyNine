@@ -351,3 +351,102 @@ Two further things came out of measuring rather than reasoning:
 and Ruthless (46-48%), and it plays visibly differently. A larger gap wants a
 two-ply search rather than more heuristic tuning, and that is a bigger piece of
 work than this was.
+
+---
+
+## 21. A loss has to be visible before it is announced
+
+Two reports, one cause. Eliminated mid-turn, the game went straight to the
+result; and a stranded turn offered an "SDQ" button that had to be pressed
+before anything would happen.
+
+The first was a lifetime problem. `eliminate` sweeps the player's hand back into
+the deck as part of eliminating them, so any UI that renders *after* the event
+renders an empty hand — the cards that decided the game are gone by the time
+there is anything to show. The hand now travels on the event itself, captured
+before the sweep, exactly as the unspent well card already did. It is held on
+screen for a beat before the verdict.
+
+The second was a category error in the interface. Being stranded — no legal
+card, no well, a play owed — has exactly one outcome. Presenting it as a button
+made the player confirm arithmetic, and in pass-and-play made the whole table
+wait while somebody conceded a game they had already lost. It resolves itself
+now, after long enough to read the board. Conceding stays in the pause menu,
+where it is a genuine choice.
+
+Two things worth keeping:
+
+**The refill is what makes the reveal necessary.** You do not keep the hand you
+played from — you draw back to three — so being stranded means the cards you
+were dealt *into the hole* were dead as well. That is precisely the thing a
+player wants to see, and precisely what an announcement withholds.
+
+**The transient beat had to be tested where it is deterministic.** A UI test for
+a 2.3-second overlay fails on timing, not behaviour: an XCUITest query can take
+longer than the window it is looking for. It is asserted at the view-model level
+by polling the phase, and the UI test covers what persists — that nothing was
+tapped and the seat still resolved.
+
+## 22. A DEBUG-only seam called from non-DEBUG code
+
+The launch-argument hook that forces a stranded position calls a `#if DEBUG`
+coordinator seam, and the calling method was not itself guarded. Every test run
+is a Debug build, so it compiled and passed everywhere it was exercised — and
+would have failed the Release archive, which is the one build that matters and
+the last one anybody makes.
+
+Caught by building Release before tagging the version rather than after. That
+check is cheap and belongs in the release routine, not in the post-mortem.
+
+---
+
+## 23. A button is only tappable where it draws
+
+Reported by a player: the rulebook sections opened when you tapped the title and
+not when you tapped the arrow.
+
+A SwiftUI `Button`'s label hit-tests its *rendered content*, not its frame. The
+row was an icon, a title, a `Spacer`, and a chevron — so the live area was the
+icon, the words, and an 11-point glyph, with dead space in between. The chevron
+is the part that looks like the control and was the hardest thing on the row to
+hit; 11 points against a 44-point minimum.
+
+`.contentShape(Rectangle())` makes the whole row one target. The tests tap at
+96% across (the arrow) and 72% (the dead middle), and both were confirmed to
+fail with the fix reverted — a regression test that passes on the broken code
+tests nothing.
+
+Worth a sweep whenever a row-shaped control has a `Spacer` in it: the layout
+looks like one control and behaves like two small ones.
+
+## 24. The icon drew its wordmark twice
+
+The second 9 looked squashed. The font was fine; the icon was drawing the
+numerals twice — once as filled text with a shadow, and again as a separately
+built outline, displaced by a hardcoded `textSize.height * 0.22`, to clip the
+brass gradient. The two copies never landed on each other.
+
+On the first 9 the seam hid inside the stroke. On the second it fell across the
+counter and filled it in, which is what read as distortion.
+
+One path now serves both the shadow and the gradient clip, because a path cannot
+be misaligned with itself. The glyphs are laid out explicitly rather than through
+a typesetter whose metrics were then being guessed at, centring is on the inked
+bounds rather than typographic ones, and the fill is non-zero winding so tightly
+kerned numerals merge rather than punching a hole at the overlap.
+
+Note that the bug was also supplying a bevel: two offset copies of a glyph read
+as depth. Removing it left the numerals flatter and correct. If the depth is
+wanted back it should be drawn deliberately.
+
+## 25. A 0.4-second margin is not a margin
+
+`test07` failed once in a full run and passed alone, twice. The coaching toast
+lives 2.6 seconds; the test tapped once and waited up to 3 seconds for it to
+appear. Under full-suite load an XCUITest query routinely takes longer than the
+window it is looking for, so the toast came and went mid-query.
+
+It taps up to three times with short waits now — each tap re-arms the toast, so
+three short looks beat one long one. The same shape as the stranded-hand reveal:
+anything that appears for about two seconds cannot be asserted on with a single
+slow query, and the fix is more attempts rather than a longer wait.

@@ -248,9 +248,27 @@ final class FlowUITests: XCTestCase {
                     let name = dead.label
                     tapVisiblePortion(of: dead)
 
+                    // Tap again if the toast isn't found, rather than waiting
+                    // longer for it.
+                    //
+                    // The explanation is on screen for 2.6 seconds and this was
+                    // a single tap followed by a 3-second wait — a 0.4-second
+                    // margin against an XCUITest query that, under full-suite
+                    // load, routinely takes longer than the window itself. The
+                    // toast came and went while the query was still resolving,
+                    // and the test failed for the one reason that had nothing to
+                    // do with the app. Each tap re-arms it, so three short looks
+                    // beat one long one.
                     let toast = app.descendants(matching: .any)["coaching-toast"]
+                    var explained = toast.waitForExistence(timeout: 1.5)
+                    var retries = 0
+                    while !explained, retries < 3 {
+                        retries += 1
+                        tapVisiblePortion(of: dead)
+                        explained = toast.waitForExistence(timeout: 1.5)
+                    }
                     XCTAssertTrue(
-                        toast.waitForExistence(timeout: 3),
+                        explained,
                         "Tapping the dead \(name) should explain why it can't be played"
                     )
                     XCTAssertTrue(

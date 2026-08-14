@@ -39,6 +39,21 @@ struct NinetyNineApp: App {
         if arguments.contains("-uitest-showcase") {
             Records.shared.seedShowcase()
         }
+        // Force the one position with no decision in it: a play owed, nothing
+        // legal, no well. Reaching it by playing is a matter of luck, and the
+        // behaviour it drives — show the hand, then end the turn unprompted — is
+        // exactly the kind that only shows up in a running app.
+        if arguments.contains("-uitest-stranded") {
+            UITestStranded.enabled = true
+        }
+        // Put the board under real pressure on demand. The store's tension shot
+        // used to be *played* for, which meant waiting for a tally of 78 to turn
+        // up before the player was knocked out — luck, and it got worse when a
+        // stranded seat started ending its own turn instead of stalling. A
+        // capture that fails one run in three is a capture that blocks releases.
+        if arguments.contains("-uitest-pressure") {
+            UITestPressure.enabled = true
+        }
         // A test that needs a particular hand — a pair to run, a queen to draw —
         // can't wait for one to turn up by luck. This pins the shuffle.
         if let index = arguments.firstIndex(of: "-uitest-seed"),
@@ -60,4 +75,18 @@ struct NinetyNineApp: App {
 /// sets it but the launch argument above.
 enum UITestSeed {
     nonisolated(unsafe) static var value: UInt32?
+}
+
+/// Set by `-uitest-stranded`. Puts the viewing player in a dead position as soon
+/// as play begins, so the UI test can watch the table explain the loss and end
+/// the turn on its own.
+enum UITestStranded {
+    nonisolated(unsafe) static var enabled = false
+}
+
+/// Set by `-uitest-pressure`. Raises the tally to a dangerous number once the
+/// table is live, so the store's tension shot is a real board rendered by the
+/// real app rather than one the capture had to get lucky to reach.
+enum UITestPressure {
+    nonisolated(unsafe) static var enabled = false
 }

@@ -110,6 +110,18 @@ func drawIcon(side: CGFloat, context: CGContext) {
     }
 
     // The wordmark. Serif, heavy, tight — same construction as the app's title.
+    //
+    // Built once, as a path, and used for everything.
+    //
+    // It used to be drawn twice: `NSAttributedString.draw` for the shadowed
+    // fill, and then a *separately* built outline — offset by a magic
+    // `textSize.height * 0.22` — to clip the brass gradient. Those two never
+    // quite landed on each other, so every glyph was really two glyphs a few
+    // pixels apart. On the first 9 the seam hid inside the stroke; on the second
+    // it fell across the counter, which is why that one read as squashed: its
+    // hole was being filled in by a copy of itself.
+    //
+    // One path can't be misaligned with itself.
     let pointSize = side * 0.46
     let font = NSFont(descriptor:
         NSFontDescriptor(name: "NewYork-Heavy", size: pointSize)
@@ -117,69 +129,64 @@ func drawIcon(side: CGFloat, context: CGContext) {
         ?? NSFont(name: "Times New Roman Bold", size: pointSize)
         ?? NSFont.boldSystemFont(ofSize: pointSize)
 
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: font,
-        .foregroundColor: brassLight,
-        .kern: -pointSize * 0.07,
-    ]
-    let text = NSAttributedString(string: "99", attributes: attributes)
-    let textSize = text.size()
-    let origin = CGPoint(
-        x: (side - textSize.width) / 2,
-        y: (side - textSize.height) / 2 + side * 0.005
-    )
+    let wordmark = "99"
+    let tracking = -pointSize * 0.07
+    let ctFont = font as CTFont
 
-    // Drop shadow under the numerals so they lift off the felt.
+    // Lay the glyphs out by hand so the kerning is ours and the advance is
+    // known exactly — no round trip through a typesetter whose metrics we then
+    // have to guess at.
+    var glyphs: [CGGlyph] = []
+    for scalar in wordmark.unicodeScalars {
+        var characters: [UniChar] = Array(String(scalar).utf16)
+        var buffer = [CGGlyph](repeating: 0, count: characters.count)
+        if CTFontGetGlyphsForCharacters(ctFont, &characters, &buffer, characters.count) {
+            glyphs.append(contentsOf: buffer)
+        }
+    }
+
+    var advances = [CGSize](repeating: .zero, count: glyphs.count)
+    CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, glyphs.count)
+
+    let glyphPath = CGMutablePath()
+    var pen: CGFloat = 0
+    for (index, glyph) in glyphs.enumerated() {
+        if let letter = CTFontCreatePathForGlyph(ctFont, glyph, nil) {
+            glyphPath.addPath(letter, transform: CGAffineTransform(translationX: pen, y: 0))
+        }
+        pen += advances[index].width + (index == glyphs.count - 1 ? 0 : tracking)
+    }
+
+    // Centre on the actual inked bounds rather than on typographic metrics,
+    // which include ascender and descender space the wordmark doesn't use.
+    let inked = glyphPath.boundingBoxOfPath
+    guard !inked.isNull, inked.width > 0, inked.height > 0 else { return }
+    var centring = CGAffineTransform(
+        translationX: (side - inked.width) / 2 - inked.minX,
+        y: (side - inked.height) / 2 - inked.minY
+    )
+    guard let centred = glyphPath.copy(using: &centring) else { return }
+
+    // The shadow, cast by the shape itself.
     context.saveGState()
     context.setShadow(
         offset: CGSize(width: 0, height: -side * 0.012),
         blur: side * 0.03,
         color: NSColor.black.withAlphaComponent(0.7).cgColor
     )
-    text.draw(at: origin)
+    context.addPath(centred)
+    context.setFillColor(brassLight.cgColor)
+    // Non-zero winding: the two 9s are kerned tight enough to touch, and even-odd
+    // would punch the overlap out into a hole.
+    context.fillPath(using: .winding)
     context.restoreGState()
 
-    // Brass gradient over the glyphs, clipped to their shape.
+    // The brass gradient, clipped to the same path.
     context.saveGState()
-    let glyphPath = NSBezierPath()
-    // Re-draw the text as a clip by rendering it into a mask via a transparency
-    // layer; simplest reliable route on AppKit is to draw the gradient inside a
-    // clip built from the text's outline.
-    if let ctFont = attributes[.font] as? NSFont {
-        let line = CTLineCreateWithAttributedString(
-            NSAttributedString(string: "99", attributes: [.font: ctFont])
-        )
-        let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
-        for run in runs {
-            let count = CTRunGetGlyphCount(run)
-            var glyphs = [CGGlyph](repeating: 0, count: count)
-            var positions = [CGPoint](repeating: .zero, count: count)
-            CTRunGetGlyphs(run, CFRangeMake(0, count), &glyphs)
-            CTRunGetPositions(run, CFRangeMake(0, count), &positions)
-            let runFont = unsafeBitCast(
-                CFDictionaryGetValue(
-                    CTRunGetAttributes(run),
-                    Unmanaged.passUnretained(kCTFontAttributeName).toOpaque()
-                ),
-                to: CTFont.self
-            )
-            for index in 0..<count {
-                guard let letter = CTFontCreatePathForGlyph(runFont, glyphs[index], nil) else { continue }
-                var transform = CGAffineTransform(
-                    translationX: origin.x + positions[index].x,
-                    y: origin.y + positions[index].y + textSize.height * 0.22
-                )
-                if let moved = letter.copy(using: &transform) {
-                    glyphPath.append(NSBezierPath(cgPath: moved))
-                }
-            }
-        }
-    }
-    if !glyphPath.isEmpty {
-        glyphPath.addClip()
-        NSGradient(colors: [brassDeep, brassMid, brassLight, brass, brassDeep])!
-            .draw(in: NSBezierPath(rect: rect), angle: 60)
-    }
+    context.addPath(centred)
+    context.clip(using: .winding)
+    NSGradient(colors: [brassDeep, brassMid, brassLight, brass, brassDeep])!
+        .draw(in: NSBezierPath(rect: rect), angle: 60)
     context.restoreGState()
 }
 

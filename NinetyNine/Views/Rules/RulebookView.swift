@@ -94,8 +94,19 @@ struct RulebookView: View {
                         .rotationEffect(.degrees(isOpen ? 0 : -90))
                 }
                 .padding(15)
+                // The whole row, not just the ink.
+                //
+                // A Button's label only hit-tests where it actually draws, so
+                // this row was tappable on the icon and the title and nowhere
+                // else: the Spacer between them was dead, and the chevron — the
+                // one part that *looks* like the control — is an 11-point glyph,
+                // well under the 44-point minimum anybody can reliably hit. It
+                // was reported as "the arrow doesn't work", which is exactly
+                // right.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("rule-section-\(section.id)")
 
             if isOpen {
                 VStack(alignment: .leading, spacing: 10) {
