@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import GameKit
 
 struct RootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,6 +20,9 @@ struct RootView: View {
     /// Built once per game in `startGame()`. Constructing this inside the view
     /// builder would deal a brand-new game on every body evaluation.
     @State private var activeGame: GameViewModel?
+    /// The deal size chosen on the setup screen, held while Apple's matchmaker
+    /// is up — the match comes back through a listener, not a return value.
+    @State private var pendingOnlineDeal: Int?
     @State private var setupFailure: String?
     @State private var mode: SetupView.GameMode = .solo
     /// Set when a game ends, carrying who deals next and what they've chosen.
@@ -63,6 +67,13 @@ struct RootView: View {
             // Authenticate early and quietly. If it fails, nothing breaks —
             // online is simply reported as unavailable when the player looks.
             GameCenterSession.shared.authenticateIfNeeded()
+        }
+        // Any route into a match — an invitation, a push, a row in the
+        // matchmaker — lands here. Watched at the root because an invitation can
+        // arrive while the player is on the home screen or mid-solo-game, not
+        // only while they happen to be looking at the online tab.
+        .onReceive(GameCenterSession.shared.$matchToOpen.compactMap { $0 }) { match in
+            openOnlineMatch(match)
         }
         .alert("Couldn't deal", isPresented: .constant(setupFailure != nil)) {
             Button("OK") { setupFailure = nil }
@@ -228,30 +239,40 @@ struct RootView: View {
     /// cancelled matchmaker, no network. Each surfaces as an explanation rather
     /// than a dead button.
     private func startOnlineGame(cardsDealt: Int) {
-        Task {
-            guard GameCenterSession.shared.canPlayOnline else {
-                setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
-                return
-            }
-            let transport = GameKitTransport()
-            do {
-                let match = try await transport.findMatch(
-                    minPlayers: 2,
-                    maxPlayers: min(6, Settings.shared.opponentCount + 1),
-                    cardsDealt: cardsDealt
-                )
-                let online = GameKitTransport(match: match)
-                activeGame = .online(transport: online)
-                gameSeed += 1
-                go(.game)
-            } catch let error as MatchError {
-                // Cancelling the matchmaker is a choice, not a failure.
-                if case .matchmakingFailed("cancelled") = error { return }
-                setupFailure = error.errorDescription ?? "Couldn't start an online match."
-            } catch {
-                setupFailure = error.localizedDescription
-            }
+        guard GameCenterSession.shared.canPlayOnline else {
+            setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
+            return
         }
+        do {
+            // Present the matchmaker and stop. The chosen match — new or
+            // existing — arrives at the session's listener, and `matchToOpen`
+            // below takes the app into it. Awaiting a match here is what broke:
+            // the callback that would have delivered it was deprecated in iOS 9.
+            try GameKitTransport.presentMatchmaker(
+                minPlayers: 2,
+                maxPlayers: Settings.shared.onlinePlayerCount
+            )
+            pendingOnlineDeal = cardsDealt
+        } catch let error as MatchError {
+            setupFailure = error.errorDescription ?? "Couldn't open Game Center."
+        } catch {
+            setupFailure = error.localizedDescription
+        }
+    }
+
+    /// Take the app into a match the system handed us.
+    private func openOnlineMatch(_ match: GKTurnBasedMatch) {
+        GameKitTransport.dismissMatchmaker()
+        GameCenterSession.shared.matchToOpen = nil
+
+        let transport = GameKitTransport(
+            match: match,
+            cardsDealt: pendingOnlineDeal ?? Settings.shared.cardsDealt
+        )
+        pendingOnlineDeal = nil
+        activeGame = .online(transport: transport)
+        gameSeed += 1
+        go(.game)
     }
 
     // MARK: - Transitions

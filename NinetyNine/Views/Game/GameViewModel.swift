@@ -328,7 +328,33 @@ final class GameViewModel: ObservableObject {
 
     var isYourTurn: Bool {
         guard let view else { return false }
-        return view.isYourTurn && !awaitingHandoff && !isChoosingWell
+        // Not while *anybody* still owes a well.
+        //
+        // This used to check only whether **you** were still choosing, which is
+        // fine on one device — the wells are buried in sequence and the table
+        // doesn't appear until they're done. Online they're buried in parallel,
+        // so the moment you finished yours the app showed you a live table,
+        // announced "Your move", and then refused every card you tapped: the
+        // rules correctly report nothing as playable while a match is still
+        // being set up, and the interface hadn't been told.
+        return view.isYourTurn
+            && !awaitingHandoff
+            && !isChoosingWell
+            && !isWaitingForOthersToBuryWells
+    }
+
+    /// Somebody else still owes a well, so the game hasn't begun.
+    var isWaitingForOthersToBuryWells: Bool {
+        guard let view, let chooser = view.wellChooserID else { return false }
+        return chooser != view.youID
+    }
+
+    /// Who the table is waiting on, for a screen that would otherwise just sit
+    /// there looking playable.
+    var wellChooserName: String? {
+        guard let view, let chooser = view.wellChooserID, chooser != view.youID else { return nil }
+        return participants.first { $0.id == chooser }?.name
+            ?? view.opponents.first { $0.id == chooser }?.name
     }
 
     /// Several people round one phone, so the builder names whose deal it is.

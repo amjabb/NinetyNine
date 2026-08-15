@@ -40,6 +40,12 @@ final class Settings: ObservableObject {
     /// Costs nothing in fairness: the well is chosen face down, so a player
     /// picking positions is guessing exactly as hard as the app is.
     @AppStorage("settings.autoWell") var autoAssignWells: Bool = false
+    /// Seats at an online table, counting you.
+    ///
+    /// Its own setting rather than the solo opponents slider, which is what it
+    /// used to read: choosing five opponents for a solo game silently meant
+    /// inviting five strangers the next time you tapped online.
+    @AppStorage("settings.onlinePlayers") var onlinePlayerCount: Int = 2
 
     /// Raw entered names, padded to the seat count. Entries may be empty — the
     /// field shows "Player 3" as a *placeholder*, not as literal text the player

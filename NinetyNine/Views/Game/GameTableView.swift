@@ -292,6 +292,19 @@ struct GameTableView: View {
             Group {
                 if viewModel.view?.isOver ?? false {
                     EmptyView()
+                } else if viewModel.isWaitingForOthersToBuryWells {
+                    // Said out loud, because the alternative is a table that
+                    // looks ready and rejects everything you tap.
+                    VStack(spacing: 2) {
+                        Text("Wells are being buried")
+                            .font(Typography.sectionTitle)
+                            .foregroundStyle(Palette.brassLight)
+                        Text(viewModel.wellChooserName.map { "waiting for \($0)" }
+                            ?? "waiting for the others")
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.ivoryDim)
+                    }
+                    .transition(.opacity)
                 } else if viewModel.isYourTurn {
                     Text(viewModel.options.canPlayFromHand ? "Your move" : "No legal card")
                         .font(Typography.sectionTitle)
@@ -309,7 +322,12 @@ struct GameTableView: View {
             // 99 — whether to hand the next player a 99 or a clean slate — and a
             // small CW/CCW badge in the corner was leaving people to work it out
             // from the seating.
-            if !(viewModel.view?.isOver ?? false), let next = viewModel.nextPlayerName {
+            // Suppressed while wells are outstanding: "waiting for HeloAlt" and
+            // "then HeloAlt" stacked on top of each other say the same thing
+            // twice and crowd the two lines above them.
+            if !(viewModel.view?.isOver ?? false),
+               !viewModel.isWaitingForOthersToBuryWells,
+               let next = viewModel.nextPlayerName {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.turn.down.right")
                         .font(.system(size: 9, weight: .bold))

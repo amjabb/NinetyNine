@@ -157,6 +157,14 @@ final class WatchingTheWellTests: XCTestCase {
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
         }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         return model
     }
 
@@ -271,6 +279,14 @@ final class WellCardIsActuallyPlayedTests: XCTestCase {
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
         }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         // Wait for the table to stop moving before forcing a position. The AI
         // turn loop started by `begin()` is still running, and a state written
         // under it gets played over — which looked exactly like the bug being
@@ -359,6 +375,14 @@ final class WellCardCountTests: XCTestCase {
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
         }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         await model._settleForTesting()
         // Nothing legal in hand, so the well is the only way on.
         model._forceWellForTesting(well, hand: [Card(id: 880, rank: .king, suit: .spades)], tally: 99)
@@ -439,6 +463,14 @@ final class SnackooShowsItsCardsTests: XCTestCase {
             guardCount += 1
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
+        }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
         }
         return model
     }

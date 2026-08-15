@@ -125,7 +125,17 @@ struct SetupView: View {
             VStack {
                 Spacer()
                 VStack(spacing: 10) {
-                    BrassButton(title: "Deal", icon: "play.fill", isProminent: true, action: onStart)
+                    // Online, "Deal" was doing two unrelated jobs — start a new
+                    // match, and browse the ones you're already in — and naming
+                    // neither. Apple's matchmaker is both a lobby and an inbox,
+                    // so the button that opens it should say so.
+                    BrassButton(
+                        title: primaryActionTitle,
+                        subtitle: primaryActionSubtitle,
+                        icon: mode == .online ? "person.2.fill" : "play.fill",
+                        isProminent: true,
+                        action: onStart
+                    )
                     BrassButton(title: "Back", isProminent: false, action: onBack)
                 }
                 .padding(24)
@@ -154,6 +164,23 @@ struct SetupView: View {
         if trimmed != seatNameDrafts { seatNameDrafts = trimmed }
     }
 
+    /// What the main button does, said plainly.
+    private var primaryActionTitle: String {
+        guard mode == .online else { return "Deal" }
+        return session.matchesAwaitingYou > 0 ? "Your matches" : "Play online"
+    }
+
+    private var primaryActionSubtitle: String? {
+        guard mode == .online, session.canPlayOnline else { return nil }
+        if session.matchesAwaitingYou > 0 {
+            return "\(session.matchesAwaitingYou) waiting on you · or start a new one"
+        }
+        if session.totalMatches > 0 {
+            return "start a new match, or open one in progress"
+        }
+        return "invite a friend, or match with anyone"
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("The table").labelStyle()
@@ -175,7 +202,11 @@ struct SetupView: View {
                     icon: "checkmark.seal.fill",
                     tint: Palette.safe,
                     title: "Signed in as \(name)",
-                    detail: "Tap Deal to find a match. Two to six players."
+                    detail: session.matchesAwaitingYou > 0
+                        ? "\(session.matchesAwaitingYou) waiting on you."
+                        : (session.totalMatches > 0
+                            ? "\(session.totalMatches) match\(session.totalMatches == 1 ? "" : "es") in progress."
+                            : "No matches yet.")
                 )
             case .signingIn, .unknown:
                 statusCard(
@@ -191,6 +222,15 @@ struct SetupView: View {
                     title: "Game Center isn't available",
                     detail: reason
                 )
+            }
+
+            if session.canPlayOnline {
+                BrassSegments(
+                    title: "Players",
+                    options: (2...6).map { ($0, "\($0)") },
+                    selection: $settings.onlinePlayerCount
+                )
+                .onChange(of: settings.onlinePlayerCount) { _, _ in clampDeal() }
             }
 
             Text("The player who starts the match sets the deal size. Everything else plays exactly as it does offline.")

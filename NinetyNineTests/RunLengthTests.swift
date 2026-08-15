@@ -18,6 +18,14 @@ final class ThreeOfAKindRunTests: XCTestCase {
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
         }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
+        }
 
         // Force a hand of three sevens at a low tally.
         let sevens = [Suit.spades, Suit.hearts, Suit.clubs].enumerated().map {
@@ -59,6 +67,14 @@ final class ThreeOfAKindRunTests: XCTestCase {
             guardCount += 1
             model.chooseWell(slots: [0, 1])
             try? await Task.sleep(for: .milliseconds(150))
+        }
+        // And wait for *everyone* to finish burying, not just us. Nothing is
+        // playable until the match has actually started, which is the whole
+        // point of the gate this used to run ahead of.
+        var settleGuard = 0
+        while model.view?.wellChooserID != nil && settleGuard < 40 {
+            settleGuard += 1
+            try? await Task.sleep(for: .milliseconds(100))
         }
 
         // Three sevens from 85: two is 99, three would be 106.

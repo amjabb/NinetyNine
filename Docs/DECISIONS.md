@@ -450,3 +450,51 @@ It taps up to three times with short waits now — each tap re-arms the toast, s
 three short looks beat one long one. The same shape as the stranded-hand reveal:
 anything that appears for about two seconds cannot be asserted on with a single
 slow query, and the fix is more attempts rather than a longer wait.
+
+---
+
+## 26. Online multiplayer could never be entered, and no test could have known
+
+Three bugs, found by playing a real match across two simulators signed into two
+Game Center accounts. Every one of them lived in the handshake between GameKit
+and the app — the one path with no coverage, and the reason "never run against a
+real network" had been on the list for weeks.
+
+**Nothing could open a match.** `findMatch` awaited a continuation resumed from
+the matchmaker's `didFindMatch:` delegate callback. Apple deprecated that in
+iOS 9 and replaced it with `GKTurnBasedEventListener`; the SDK header says so.
+The system has not called it since 2015, so the continuation only ever resumed
+on *cancel* or *error*. Choosing a match dismissed the sheet and returned the
+player to the setup screen — every time, for invitations and for their own turn
+alike.
+
+**And nothing could receive one.** `GKLocalPlayer.local.register(self)` sat
+inside `start()`, which runs only *after* a match has been obtained. No match
+was ever obtained, so no listener was ever registered, so invitations arrived
+nowhere. `leave()` compounded it with `unregisterAllListeners()`, which would
+have killed the app's only route for incoming invitations for the rest of the
+session. The listener now belongs to the session, is registered once at
+authentication, and routes events to whichever transport owns that match.
+
+**A late-joining player was a stranger to their own match.** A match created
+with an automatch seat is written before anybody fills it, and at that moment
+`participant.player` is nil — so the payload recorded a random UUID named
+"Player". When the real player arrived their `gamePlayerID` matched nothing:
+their own device drew them as an opponent called "Player", gave them no hand,
+and waited for a turn from somebody who was holding the phone. Identities are
+now reconciled by seat index against the live match, at join and on every
+update, and the corrected payload is written back.
+
+Two smaller things fell out of the same session. The online seat count was
+reading `Settings.opponentCount` — the *solo* opponents slider — which is how a
+two-player game invited six people. And the table announced "Your move" while
+other players were still burying wells: wells are sequential on one device and
+parallel online, so `isYourTurn` had never needed to ask whether the match had
+actually started. It refused every card tapped, silently, because the rules were
+right and the interface had not been told.
+
+The general lesson is the specific one: a protocol boundary that is only ever
+exercised by hand is a boundary that rots. The fake in `OnlineEntryTests` models
+GameKit's semantics — a match is a document with one current participant, a turn
+is a write, a seat can be filled after creation — so these failures now have
+somewhere to be caught before a person finds them.

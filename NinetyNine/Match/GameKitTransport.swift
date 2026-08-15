@@ -164,61 +164,66 @@ final class GameKitTransport: NSObject, MatchTransport {
 
     /// - Parameter match: an existing match (from an invitation or the
     ///   matchmaker). Pass nil and call `findMatch` to start one.
-    init(match: GKTurnBasedMatch? = nil) {
+    /// - Parameter cardsDealt: only consulted when *this* device is the one
+    ///   establishing the match. Joining an existing match takes the deal size
+    ///   from the payload, because the game was already dealt.
+    init(match: GKTurnBasedMatch? = nil, cardsDealt: Int = 7) {
         super.init()
         self.match = match
+        self.cardsDealt = cardsDealt
         self.localPlayerID = GKLocalPlayer.local.gamePlayerID
     }
 
     // MARK: - Matchmaking
 
     /// Present GameKit's matchmaker and wait for a match.
-    func findMatch(minPlayers: Int, maxPlayers: Int, cardsDealt: Int) async throws -> GKTurnBasedMatch {
+    /// Put Apple's matchmaker on screen. Does **not** return a match.
+    ///
+    /// It used to, by awaiting a continuation resumed from the matchmaker's
+    /// `didFindMatch:` delegate callback — which Apple deprecated in iOS 9 and
+    /// replaced with `GKTurnBasedEventListener`. Nothing has called that method
+    /// since 2015, so the continuation only ever resumed on *cancel* or *error*:
+    /// choosing a match dismissed the sheet and dropped the player back on the
+    /// setup screen, every time.
+    ///
+    /// The match now arrives at `GameCenterSession`, which is listening from
+    /// launch, and the root view opens it.
+    static func presentMatchmaker(minPlayers: Int, maxPlayers: Int) throws {
         guard GKLocalPlayer.local.isAuthenticated else { throw MatchError.notAuthenticated }
-        self.cardsDealt = cardsDealt
 
         let request = GKMatchRequest()
         request.minPlayers = max(2, minPlayers)
         request.maxPlayers = min(6, maxPlayers)
-        request.defaultNumberOfPlayers = maxPlayers
+        request.defaultNumberOfPlayers = min(6, maxPlayers)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let controller = GKTurnBasedMatchmakerViewController(matchRequest: request)
-            controller.turnBasedMatchmakerDelegate = MatchmakerDelegate(
-                onMatch: { [weak self] match in
-                    self?.dismissMatchmaker()
-                    continuation.resume(returning: match)
-                },
-                onCancel: { [weak self] in
-                    self?.dismissMatchmaker()
-                    continuation.resume(throwing: MatchError.matchmakingFailed("cancelled"))
-                },
-                onError: { [weak self] error in
-                    self?.dismissMatchmaker()
-                    continuation.resume(throwing: error)
-                }
-            )
-            // The delegate is only weakly held by GameKit, so it has to be kept
-            // alive for the lifetime of the presentation.
-            self.matchmakerDelegate = controller.turnBasedMatchmakerDelegate
-            self.presentedMatchmaker = controller
-            Self.topViewController()?.present(controller, animated: true)
-        }
+        let controller = GKTurnBasedMatchmakerViewController(matchRequest: request)
+        controller.turnBasedMatchmakerDelegate = sharedMatchmakerDelegate
+        Self.presentedMatchmaker = controller
+        Self.topViewController()?.present(controller, animated: true)
     }
 
-    private var matchmakerDelegate: GKTurnBasedMatchmakerViewControllerDelegate?
+    /// Retained for the lifetime of the presentation: GameKit holds its delegate
+    /// weakly, and a deallocated one is a matchmaker that can neither be
+    /// cancelled nor report an error.
+    private static let sharedMatchmakerDelegate = MatchmakerDelegate(
+        onCancel: { dismissMatchmaker() },
+        onError: { _ in dismissMatchmaker() }
+    )
 
-    private func dismissMatchmaker() {
+    private static var presentedMatchmaker: UIViewController?
+
+    static func dismissMatchmaker() {
         presentedMatchmaker?.dismiss(animated: true)
         presentedMatchmaker = nil
-        matchmakerDelegate = nil
     }
 
     // MARK: - MatchTransport conformance
 
     func start() async throws {
         guard let match else { throw MatchError.matchmakingFailed("no match") }
-        GKLocalPlayer.local.register(self)
+        // The listener belongs to the session and is registered at launch;
+        // this transport just claims the events for its own match.
+        GameCenterSession.shared.activeObserver = self
 
         if let data = match.matchData, !data.isEmpty,
            let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data) {
@@ -226,7 +231,18 @@ final class GameKitTransport: NSObject, MatchTransport {
             // dealt under different rules: the log would apply cleanly and
             // quietly produce a different table from everyone else's.
             guard decoded.isReplayable else { throw MatchError.incompatibleRules }
-            payload = decoded
+            var reconciled = decoded
+            if Self.reconcileParticipants(&reconciled, with: match) {
+                payload = reconciled
+                // Persist the real identities if it's our turn to write. If it
+                // isn't, the corrected payload still stands locally and whoever
+                // writes next will carry it.
+                if match.currentParticipant?.player?.gamePlayerID == localPlayerID {
+                    try? await write(reconciled, endingTurn: false)
+                }
+            } else {
+                payload = reconciled
+            }
         } else {
             // We're first: establish the seed and seating, and write it so every
             // other device deals the identical game.
@@ -250,6 +266,48 @@ final class GameKitTransport: NSObject, MatchTransport {
             cardsDealt: payload.cardsDealt
         ))
         deliverPendingActions()
+    }
+
+    /// Replace placeholder identities with the real ones, once GameKit knows them.
+    ///
+    /// A match created with an automatch seat is written *before* anybody fills
+    /// it, and at that moment `participant.player` is nil — so the payload
+    /// recorded a random UUID named "Player" for that seat. When the real player
+    /// arrived, their `gamePlayerID` matched nothing, so their own device treated
+    /// them as an unknown extra seat: it drew them as an opponent called
+    /// "Player", showed the local player no hand, and waited for a turn from
+    /// somebody who was in fact holding the phone.
+    ///
+    /// Seats are matched by index because `match.participants` is stable and
+    /// ordered; only the identities inside them arrive late.
+    ///
+    /// - Returns: whether anything changed.
+    static func reconcileParticipants(_ payload: inout MatchPayload, with match: GKTurnBasedMatch) -> Bool {
+        var changed = false
+        for (index, participant) in match.participants.enumerated() {
+            guard index < payload.participantIDs.count,
+                  let player = participant.player
+            else { continue }
+
+            let recordedID = payload.participantIDs[index]
+            if recordedID != player.gamePlayerID {
+                // A seat whose id has changed was a placeholder: a real player
+                // cannot change gamePlayerID mid-match. Anything already logged
+                // against the placeholder was logged before they arrived, which
+                // is why it is safe — and necessary — to carry it across.
+                for actionIndex in payload.actions.indices
+                where payload.actions[actionIndex].playerID == recordedID {
+                    payload.actions[actionIndex].playerID = player.gamePlayerID
+                }
+                payload.participantIDs[index] = player.gamePlayerID
+                changed = true
+            }
+            if payload.participantNames[index] != player.displayName {
+                payload.participantNames[index] = player.displayName
+                changed = true
+            }
+        }
+        return changed
     }
 
     func send(_ action: SubmittedAction) async throws {
@@ -288,7 +346,11 @@ final class GameKitTransport: NSObject, MatchTransport {
         } else {
             try? await match.participantQuitOutOfTurn(with: .quit)
         }
-        GKLocalPlayer.local.unregisterAllListeners()
+        // Emphatically not `unregisterAllListeners()`: that killed the app's
+        // only route for incoming invitations for the rest of the session.
+        if GameCenterSession.shared.activeObserver === self {
+            GameCenterSession.shared.activeObserver = nil
+        }
     }
 
     // MARK: - Writing
@@ -383,37 +445,29 @@ final class GameKitTransport: NSObject, MatchTransport {
     }
 }
 
-// MARK: - GameKit events
+// MARK: - Match events
 
-extension GameKitTransport: GKLocalPlayerListener {
+extension GameKitTransport: GameCenterMatchObserver {
 
-    /// The turn moved — either to us, or past us.
-    nonisolated func player(
-        _ player: GKPlayer,
-        receivedTurnEventFor match: GKTurnBasedMatch,
-        didBecomeActive: Bool
-    ) {
-        // GameKit calls listeners on an arbitrary queue. The transport protocol
-        // is @MainActor and its callers rely on synchronous delivery, so hopping
-        // here is the adapter's job — not its callers'.
-        Task { @MainActor in
-            self.refresh(from: match)
+    var observedMatchID: String? { match?.matchID }
+
+    func matchDidUpdate(_ match: GKTurnBasedMatch) {
+        self.match = match
+        // Seats can be filled between turns, so identities are re-checked on
+        // every update rather than only at join.
+        if var current = payload, Self.reconcileParticipants(&current, with: match) {
+            payload = current
         }
+        refresh(from: match)
     }
 
-    nonisolated func player(_ player: GKPlayer, matchEnded match: GKTurnBasedMatch) {
-        Task { @MainActor in
-            self.refresh(from: match)
-        }
+    func matchDidEnd(_ match: GKTurnBasedMatch) {
+        self.match = match
+        refresh(from: match)
     }
 
-    nonisolated func player(
-        _ player: GKPlayer,
-        wantsToQuitMatch match: GKTurnBasedMatch
-    ) {
-        Task { @MainActor in
-            self.onUpdate?(.participantLeft(playerID: player.gamePlayerID))
-        }
+    func playerWantsToQuit(_ playerID: String) {
+        onUpdate?(.participantLeft(playerID: playerID))
     }
 }
 
@@ -422,16 +476,10 @@ extension GameKitTransport: GKLocalPlayerListener {
 /// A small box so the closures can be captured; GameKit holds its delegate
 /// weakly, so the transport retains this for the lifetime of the presentation.
 private final class MatchmakerDelegate: NSObject, GKTurnBasedMatchmakerViewControllerDelegate {
-    private let onMatch: (GKTurnBasedMatch) -> Void
     private let onCancel: () -> Void
     private let onError: (Error) -> Void
 
-    init(
-        onMatch: @escaping (GKTurnBasedMatch) -> Void,
-        onCancel: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
-    ) {
-        self.onMatch = onMatch
+    init(onCancel: @escaping () -> Void, onError: @escaping (Error) -> Void) {
         self.onCancel = onCancel
         self.onError = onError
     }
@@ -446,4 +494,8 @@ private final class MatchmakerDelegate: NSObject, GKTurnBasedMatchmakerViewContr
     ) {
         onError(error)
     }
+
+    // Deliberately no `didFindMatch:`. It is deprecated, the system no longer
+    // calls it, and implementing it is how this was broken in the first place:
+    // the selected match arrives at the event listener instead.
 }
