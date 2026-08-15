@@ -40,6 +40,8 @@ struct RootView: View {
     private enum Route: Equatable {
         case home
         case setup
+        /// Choosing the deal for a match nobody has been invited to yet.
+        case onlineSetup
         /// Between games: the first player out chooses the next deal size.
         case nextDeal
         case game
@@ -98,9 +100,18 @@ struct RootView: View {
             SetupView(
                 mode: $mode,
                 onStart: { startGame() },
-                onBack: { go(.home) }
+                onBack: { go(.home) },
+                onNewOnlineMatch: { go(.onlineSetup) },
+                onOpenOnlineMatches: { presentMatchmaker() }
             )
             .id("setup")
+
+        case .onlineSetup:
+            OnlineMatchSetupView(
+                onFindPlayers: { startOnlineGame(cardsDealt: Settings.shared.cardsDealt) },
+                onBack: { go(.setup) }
+            )
+            .id("online-setup")
 
         case .nextDeal:
             if let plan = nextDeal {
@@ -141,7 +152,7 @@ struct RootView: View {
         if let viewModel = activeGame {
             GameTableView(
                 viewModel: viewModel,
-                onExit: { go(.home) },
+                onExit: { leaveGame(viewModel) },
                 onRematch: { planNextDeal(after: viewModel) }
             )
         } else {
@@ -260,6 +271,41 @@ struct RootView: View {
         }
     }
 
+    /// Leaving a table.
+    ///
+    /// Online this is *not* a forfeit — a turn-based match waits, so stepping
+    /// out has to put you back among your games rather than at the main menu.
+    /// There was no route back at all before: the only way out of a match was a
+    /// button marked "SDQ", which reads as conceding whether or not it does.
+    private func leaveGame(_ viewModel: GameViewModel) {
+        activeGame = nil
+        if viewModel.mode == .online {
+            mode = .online
+            go(.setup)
+            presentMatchmaker()
+        } else {
+            go(.home)
+        }
+    }
+
+    /// Show Game Center's list of the player's matches.
+    private func presentMatchmaker() {
+        guard GameCenterSession.shared.canPlayOnline else {
+            setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
+            return
+        }
+        do {
+            try GameKitTransport.presentMatchmaker(
+                minPlayers: 2,
+                maxPlayers: Settings.shared.onlinePlayerCount
+            )
+        } catch let error as MatchError {
+            setupFailure = error.errorDescription ?? "Couldn't open Game Center."
+        } catch {
+            setupFailure = error.localizedDescription
+        }
+    }
+
     /// Take the app into a match the system handed us.
     private func openOnlineMatch(_ match: GKTurnBasedMatch) {
         GameKitTransport.dismissMatchmaker()
@@ -267,7 +313,8 @@ struct RootView: View {
 
         let transport = GameKitTransport(
             match: match,
-            cardsDealt: pendingOnlineDeal ?? Settings.shared.cardsDealt
+            cardsDealt: pendingOnlineDeal ?? Settings.shared.cardsDealt,
+            autoAssignWells: Settings.shared.onlineAutoAssignWells
         )
         pendingOnlineDeal = nil
         activeGame = .online(transport: transport)

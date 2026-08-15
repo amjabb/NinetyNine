@@ -70,7 +70,10 @@ final class MatchCoordinator: ObservableObject {
 
     private func handle(_ update: MatchUpdate) {
         switch update {
-        case .started(let participants, let seed, let cardsDealt):
+        case .started(let participants, let seed, let cardsDealt, let autoWells):
+            // An online match carries its own well rule; pass-and-play sets it
+            // locally before the match begins.
+            if mode == .online { autoAssignLocalWells = autoWells }
             begin(participants: participants, seed: seed, cardsDealt: cardsDealt)
 
         case .action(let submitted):
@@ -209,10 +212,13 @@ final class MatchCoordinator: ObservableObject {
 
     /// True when the game is waiting on a well this app has been told to pick.
     var isAutoWellTurn: Bool {
-        guard autoAssignLocalWells, mode == .passAndPlay,
+        guard autoAssignLocalWells, mode == .passAndPlay || mode == .online,
               let engine, !engine.state.isOver,
               let chooser = engine.state.wellChooserID
         else { return false }
+        // Online, only ever our own seat: every device banks its own well, and
+        // reaching for somebody else's would be both wrong and unsendable.
+        if mode == .online { return chooser == transport.localPlayerID }
         return participants.first { $0.id == chooser }?.kind.isLocalHuman == true
     }
 
@@ -222,15 +228,22 @@ final class MatchCoordinator: ObservableObject {
     /// the top of the fan would bank everyone's two lowest cards in every game
     /// — a systematic bias where the player's own blind guess has none.
     @discardableResult
-    func stepAutoWell() -> [GameEvent]? {
+    func stepAutoWell() async -> Bool {
         guard isAutoWellTurn, let engine,
               let chooser = engine.state.wellChooserID,
               let seat = engine.state.index(of: chooser)
-        else { return nil }
+        else { return false }
         let dealt = engine.state.players[seat].hand.count
-        guard dealt >= Rules.wellSize else { return nil }
-        let slots = Array(0..<dealt).shuffled().prefix(Rules.wellSize).sorted()
-        return applyLocally(.chooseWell(slots: Array(slots)), by: chooser)
+        guard dealt >= Rules.wellSize else { return false }
+        let slots = Array(Array(0..<dealt).shuffled().prefix(Rules.wellSize).sorted())
+
+        // Online this has to travel: a well banked only on this device would
+        // leave every other client waiting on a choice they never see made.
+        if mode == .online {
+            await submit(.chooseWell(slots: slots), by: chooser)
+            return lastError == nil
+        }
+        return applyLocally(.chooseWell(slots: slots), by: chooser) != nil
     }
 
     /// True when the seat the game is waiting on is driven by AI in this process.
@@ -313,7 +326,7 @@ final class MatchCoordinator: ObservableObject {
         while isAITurn || isAutoWellTurn, safety < 400 {
             safety += 1
             if isAutoWellTurn {
-                guard stepAutoWell() != nil else { break }
+                guard await stepAutoWell() else { break }
                 continue
             }
             try? await Task.sleep(for: .seconds(Double.random(in: currentAIThinkingDelay)))

@@ -46,6 +46,10 @@ final class Settings: ObservableObject {
     /// used to read: choosing five opponents for a solo game silently meant
     /// inviting five strangers the next time you tapped online.
     @AppStorage("settings.onlinePlayers") var onlinePlayerCount: Int = 2
+    /// The well rule the player last chose for an online match. Remembered for
+    /// convenience only — the value that counts is the one written into the
+    /// match payload when it's created, because it binds everyone at the table.
+    @AppStorage("settings.onlineAutoWell") var onlineAutoAssignWells: Bool = false
 
     /// Raw entered names, padded to the seat count. Entries may be empty — the
     /// field shows "Player 3" as a *placeholder*, not as literal text the player

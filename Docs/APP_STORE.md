@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `2.1` (`MARKETING_VERSION`) / `13` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `2.2` (`MARKETING_VERSION`) / `14` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,16 +28,22 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 2.1 (build 13)
+## What's New — version 2.2 (build 14)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
 none of it. The store text is cumulative. The TestFlight note is the delta
-from 1.9.
+from 1.9, the last version anybody actually received.
 
 ### App Store — "What's New in This Version"
 
 ```
+ONLINE MULTIPLAYER, OVER GAME CENTER
+
+Play a hand now or come back tomorrow — a turn-based match waits for you. Invite
+a friend or match with anyone, two to six players. Your matches live on the
+online tab, with the ones waiting on you counted on the button.
+
 FOUR OPPONENTS, AND THE HARDEST ONE PLAYS AT YOU
 
 Cutthroat is the top difficulty. It presses the tally when pressing is a kill
@@ -55,7 +61,7 @@ A WELL YOU BUILD YOURSELF, BLIND
 
 Everything the dealer deals goes to your hand, and before a card is played you
 bury two of it face down. You don't get to look, and the deal stays in the
-shuffle's order — the position tells you nothing about the card behind it. When
+shuffle's order — position tells you nothing about the card behind it. When
 you're finally forced to open the well, shake the phone to shuffle the two
 first, the way you would at a table.
 
@@ -84,7 +90,6 @@ nothing.
 
 ALSO NEW SINCE 1.0
 
-• Online multiplayer over Game Center, a turn at a time.
 • Pass and play for two to six on one device, the screen covering itself between
   turns — including while each player buries their well.
 • Press and hold a card to play every copy of it as one turn.
@@ -93,39 +98,55 @@ ALSO NEW SINCE 1.0
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 2.1 (build 13)
+### TestFlight — test notes for 2.2 (build 14)
 
 ```
-BOTH OF THESE WERE REPORTED, AND BOTH WERE THE SAME PROBLEM: a loss you can't
-see.
+ONLINE MULTIPLAYER ACTUALLY WORKS NOW. It could not be entered at all before —
+not partially, at all — and everything below was found by playing a real match
+between two accounts.
 
-1) Eliminated mid-turn — you survived the well, still owed a play, and nothing
-   in hand was legal — the game went straight to the result. The engine sweeps
-   an eliminated hand back into the deck as part of the elimination, so by the
-   time anything drew, the cards were already gone. The hand now rides along on
-   the elimination and is held up for a couple of seconds first. Note it's the
-   hand you were holding *at the end*, which after a refill isn't the hand you
-   played from — tell me if you'd rather it were narrower.
+• Choosing a match in Game Center's list did nothing. The app was waiting on a
+  delegate callback Apple deprecated in iOS 9 and has not called since, so
+  picking a match dismissed the sheet and dropped you back on the setup screen.
+• Invitations arrived nowhere, because the listener that receives them was only
+  registered *after* a match had been obtained — which never happened.
+• A player who joined an automatch seat was a stranger to their own match: the
+  seat had been recorded before they arrived, under a placeholder id named
+  "Player". Their own device drew them as an opponent, gave them no hand, and
+  waited for a turn from the person holding the phone. This is the likeliest
+  source of "it says I've already taken my turn when I haven't".
+• The table announced "Your move" while other players were still burying wells,
+  then silently refused every card. It now says what it's waiting for.
+• The online player count was reading the *solo* opponents slider, which is how
+  a two-player game invited six people. It has its own setting.
+• "Deal" online did two unrelated jobs and named neither. It reads "Play online",
+  or "Your matches" with a count when some are waiting.
 
-2) The rulebook sections now open when you tap the arrow, or anywhere on the
-   row. They only responded to the title before — a Button's label is only
-   tappable where it draws, so the arrow (an 11-point glyph) and the gap beside
-   it were dead. Reported by a player.
+NEW IN THE ONLINE TAB: two buttons instead of one. "Start a new match" takes you
+to a screen for the deal — players, cards, and whether wells are banked
+automatically — and only then hands over to Game Center to find people. "Open one
+in progress" is greyed out until you actually have a game going, and says how
+many are waiting on you.
 
-3) The app icon's second 9 was subtly squashed. The icon was drawing the
-   numerals twice with a small offset between the copies, and on the second one
-   the seam fell across the counter and filled it in. Same wordmark, one shape.
+AND YOU CAN LEAVE A MATCH NOW. Pausing an online game offers "Your matches",
+which puts you back among your games with your turn intact. Previously the only
+way out was a button marked SDQ, which reads as conceding.
 
-4) The SDQ button on a stranded turn is gone. No legal card, no well, a play
-   owed: there was only ever one outcome, and asking you to press for it made
-   the whole table wait on a formality. It now explains and ends the turn on its
-   own. Conceding voluntarily still lives in the pause menu, where it is a real
-   choice.
+NOTE: banking wells automatically is a match-level rule, so it had to go into the
+match data — which means matches started on 2.2 or earlier are refused rather
+than replayed into a different game. Any game in progress needs restarting once.
+
+PLEASE HAMMER THE ONLINE TAB. Specifically: does an already-open table update
+when your opponent moves? On Simulator it doesn't — GameKit's turn pushes are
+unreliable there — and re-entering the match shows the right state. I could not
+prove which it is without a device, so it is the one thing I'd most like
+confirmed on real hardware.
+
+Also fixed: the rulebook sections open when you tap the arrow, not only the
+title. And the app icon's second 9 was subtly squashed — it was being drawn
+twice with a small offset between the copies.
 
 WORTH KNOWING: refuses online matches started before 1.9.
-
-STILL UNTESTED: two-device Game Center has never run against a real network.
-This is the last thing on the list that has never been exercised for real.
 ```
 
 ---

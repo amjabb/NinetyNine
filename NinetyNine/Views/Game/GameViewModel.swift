@@ -1008,7 +1008,7 @@ final class GameViewModel: ObservableObject {
             // four wells in one frame reads as a glitch rather than a deal.
             if coordinator.isAutoWellTurn {
                 try? await Task.sleep(for: .milliseconds(220))
-                guard coordinator.stepAutoWell() != nil else { break }
+                guard await coordinator.stepAutoWell() else { break }
                 await absorb(coordinator.consumeEvents())
                 continue
             }

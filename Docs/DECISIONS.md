@@ -498,3 +498,46 @@ exercised by hand is a boundary that rots. The fake in `OnlineEntryTests` models
 GameKit's semantics — a match is a document with one current participant, a turn
 is a write, a seat can be filled after creation — so these failures now have
 somewhere to be caught before a person finds them.
+
+---
+
+## 27. A match you cannot leave, and a button doing two jobs
+
+Reported after playing 2.2: once you'd moved in an online game there was no way
+back to your other games, and the online tab offered a single button for two
+unrelated things.
+
+**Leaving.** The only exit from a table was a pause-menu button marked "SDQ —
+Self Disqualify". It did not actually forfeit — it routed home — but nobody is
+going to press it to find out, and home is the wrong destination anyway: a
+turn-based match waits, so stepping out belongs among your games. Online now
+offers "Your matches", which returns to Game Center's list with the turn intact.
+Forfeiting stays a separate, explicit thing.
+
+**Setting up.** "Start a new match" and "Open one in progress" are different
+actions with different preconditions, and one button could only ever name one of
+them. The second is disabled until there is something to open, and says how many
+are waiting rather than opening an empty list to prove it.
+
+**The deal comes before the guests.** Choosing players, cards and the well rule
+now happens on its own screen, and only then does Game Center ask who's playing.
+Nobody should be asked who they want to play before they've decided what the game
+is. Apple's matchmaker handles the invitations because it already does friends,
+automatch and invites, and it is the screen players recognise — building a second
+one would duplicate it worse.
+
+Two things fell out of this.
+
+Banking wells automatically is a *match-level rule* online, not a preference:
+every client has to agree about whether a well is chosen or dealt, or half the
+table sits on a well builder the other half never saw. So it travels in the
+payload, and `currentRules` goes to 5 — matches begun under 4 are refused rather
+than quietly replayed into a different game. And the auto-bank has to be
+*submitted* rather than applied locally, or a well banked on one device leaves
+every other client waiting on a choice they never see made.
+
+Reaching the new-match screen deliberately does *not* require being signed in.
+Choosing a deal needs nothing from Game Center, and a wall while it reconnects is
+a wall for no reason — which is precisely what happened while testing this, when
+the sandbox session dropped mid-session. Sign-in is enforced at "Find players",
+where it actually matters.

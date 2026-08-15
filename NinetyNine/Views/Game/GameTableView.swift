@@ -455,7 +455,8 @@ struct GameTableView: View {
         if showsPauseMenu {
             PauseMenu(
                 onResume: { showsPauseMenu = false },
-                onQuit: onExit
+                onQuit: onExit,
+                isOnline: viewModel.mode == .online
             )
         }
 
@@ -713,6 +714,9 @@ struct AchievementToast: View {
 struct PauseMenu: View {
     let onResume: () -> Void
     let onQuit: () -> Void
+    /// Online, leaving is not conceding — a turn-based match waits for you — so
+    /// the way out says where it goes and doesn't wear the word "disqualify".
+    var isOnline: Bool = false
 
     var body: some View {
         ZStack {
@@ -725,12 +729,22 @@ struct PauseMenu: View {
                     .foregroundStyle(Palette.ivory)
 
                 BrassButton(title: "Resume", isProminent: true, action: onResume)
-                BrassButton(
-                    title: "SDQ",
-                    subtitle: "Self Disqualify",
-                    isProminent: false,
-                    action: onQuit
-                )
+                if isOnline {
+                    BrassButton(
+                        title: "Your matches",
+                        subtitle: "the match waits — your turn keeps",
+                        icon: "list.bullet",
+                        isProminent: false,
+                        action: onQuit
+                    )
+                } else {
+                    BrassButton(
+                        title: "SDQ",
+                        subtitle: "Self Disqualify",
+                        isProminent: false,
+                        action: onQuit
+                    )
+                }
             }
             .padding(26)
             .frame(maxWidth: 300)

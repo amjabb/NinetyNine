@@ -44,7 +44,13 @@ struct MatchParticipant: Identifiable, Codable, Hashable, Sendable {
 /// What a transport tells the game about.
 enum MatchUpdate: Sendable {
     /// The match is ready; deal with this seating and seed.
-    case started(participants: [MatchParticipant], seed: UInt32, cardsDealt: Int)
+    /// - Parameter autoAssignWells: a match-level rule set by whoever started it.
+    ///   Every client has to agree, or half the table sits on a well builder the
+    ///   other half never saw.
+    case started(
+        participants: [MatchParticipant], seed: UInt32, cardsDealt: Int,
+        autoAssignWells: Bool
+    )
     /// A participant submitted a move.
     case action(SubmittedAction)
     /// A participant left. The engine treats this as a forfeit.
@@ -130,7 +136,7 @@ final class LoopbackTransport: MatchTransport {
     func start() async throws {
         guard !hasStarted else { return }
         hasStarted = true
-        onUpdate?(.started(participants: participants, seed: seed, cardsDealt: cardsDealt))
+        onUpdate?(.started(participants: participants, seed: seed, cardsDealt: cardsDealt, autoAssignWells: false))
     }
 
     func send(_ action: SubmittedAction) async throws {

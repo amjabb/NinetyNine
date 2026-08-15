@@ -12,6 +12,10 @@ struct SetupView: View {
     @Binding var mode: GameMode
     let onStart: () -> Void
     let onBack: () -> Void
+    /// Online splits in two: setting up a match, and rejoining one. They were a
+    /// single "Deal" button that did both and named neither.
+    var onNewOnlineMatch: () -> Void = {}
+    var onOpenOnlineMatches: () -> Void = {}
 
     @FocusState private var focusedSeat: Int?
     /// Names are edited in local state and written back on change. Binding a
@@ -125,17 +129,36 @@ struct SetupView: View {
             VStack {
                 Spacer()
                 VStack(spacing: 10) {
-                    // Online, "Deal" was doing two unrelated jobs — start a new
-                    // match, and browse the ones you're already in — and naming
-                    // neither. Apple's matchmaker is both a lobby and an inbox,
-                    // so the button that opens it should say so.
-                    BrassButton(
-                        title: primaryActionTitle,
-                        subtitle: primaryActionSubtitle,
-                        icon: mode == .online ? "person.2.fill" : "play.fill",
-                        isProminent: true,
-                        action: onStart
-                    )
+                    if mode == .online {
+                        // Two jobs, two buttons. "Deal" used to be both, and
+                        // opening your existing games was something you found by
+                        // accident.
+                        // Not gated on being signed in: choosing a deal needs
+                        // nothing from Game Center, and refusing to let someone
+                        // even look while it reconnects is a wall for no reason.
+                        // The invite step is where sign-in actually matters, and
+                        // that's where it's enforced.
+                        BrassButton(
+                            title: "Start a new match",
+                            subtitle: "pick the deal, then invite",
+                            icon: "plus.circle.fill",
+                            isProminent: true,
+                            action: onNewOnlineMatch
+                        )
+                        BrassButton(
+                            title: "Open one in progress",
+                            subtitle: openInProgressSubtitle,
+                            icon: "list.bullet",
+                            isProminent: false,
+                            isEnabled: session.canPlayOnline && session.totalMatches > 0,
+                            action: onOpenOnlineMatches
+                        )
+                    } else {
+                        BrassButton(
+                            title: "Deal", icon: "play.fill",
+                            isProminent: true, action: onStart
+                        )
+                    }
                     BrassButton(title: "Back", isProminent: false, action: onBack)
                 }
                 .padding(24)
@@ -164,21 +187,17 @@ struct SetupView: View {
         if trimmed != seatNameDrafts { seatNameDrafts = trimmed }
     }
 
-    /// What the main button does, said plainly.
-    private var primaryActionTitle: String {
-        guard mode == .online else { return "Deal" }
-        return session.matchesAwaitingYou > 0 ? "Your matches" : "Play online"
-    }
-
-    private var primaryActionSubtitle: String? {
-        guard mode == .online, session.canPlayOnline else { return nil }
+    /// Greyed out with nothing to open, so the button states its own emptiness
+    /// rather than opening a list to prove it.
+    private var openInProgressSubtitle: String? {
+        guard session.canPlayOnline else { return nil }
         if session.matchesAwaitingYou > 0 {
-            return "\(session.matchesAwaitingYou) waiting on you · or start a new one"
+            return "\(session.matchesAwaitingYou) waiting on you"
         }
         if session.totalMatches > 0 {
-            return "start a new match, or open one in progress"
+            return "\(session.totalMatches) in progress"
         }
-        return "invite a friend, or match with anyone"
+        return "no matches yet"
     }
 
     private var header: some View {

@@ -38,6 +38,9 @@ final class GameKitTransport: NSObject, MatchTransport {
     /// Decoded contents of the match's data blob.
     private var payload: MatchPayload?
     private var cardsDealt: Int = 6
+    /// Only consulted when this device is the one establishing the match; a
+    /// joiner takes it from the payload, because the deal already happened.
+    private var autoAssignWells: Bool = false
 
     /// Actions we've already surfaced, so re-reading the match data after a turn
     /// change doesn't replay moves the coordinator has already applied.
@@ -68,19 +71,27 @@ final class GameKitTransport: NSObject, MatchTransport {
         ///  - 3: shuffling the well became an action. This one breaks the *other*
         ///    way — an older client can't decode a case it has never heard of, so
         ///    the whole payload fails and its match quietly stops updating.
-        static let currentRules = 4
+        ///  - 5: the match creator can bank everyone's well automatically. Every
+        ///    client has to agree about whether a well is chosen or dealt, or
+        ///    half the table sits on a well builder the other half never saw.
+        static let currentRules = 5
 
         var rulesVersion: Int = MatchPayload.currentRules
         var seed: UInt32
         var cardsDealt: Int
         var participantIDs: [String]
         var participantNames: [String]
+        /// Set by whoever starts the match: wells are banked at random rather
+        /// than chosen. A match-level rule, not a preference — it changes what
+        /// every player is asked to do, so it travels with the deal.
+        var autoAssignWells: Bool = false
         var actions: [SubmittedAction]
 
         /// Absent in payloads written before versioning existed — those are all
         /// version 1 by definition.
         enum CodingKeys: String, CodingKey {
-            case rulesVersion, seed, cardsDealt, participantIDs, participantNames, actions
+            case rulesVersion, seed, cardsDealt, participantIDs, participantNames
+            case autoAssignWells, actions
         }
 
         init(
@@ -89,6 +100,7 @@ final class GameKitTransport: NSObject, MatchTransport {
             cardsDealt: Int,
             participantIDs: [String],
             participantNames: [String],
+            autoAssignWells: Bool = false,
             actions: [SubmittedAction]
         ) {
             self.rulesVersion = rulesVersion
@@ -96,6 +108,7 @@ final class GameKitTransport: NSObject, MatchTransport {
             self.cardsDealt = cardsDealt
             self.participantIDs = participantIDs
             self.participantNames = participantNames
+            self.autoAssignWells = autoAssignWells
             self.actions = actions
         }
 
@@ -106,6 +119,7 @@ final class GameKitTransport: NSObject, MatchTransport {
             cardsDealt = try container.decode(Int.self, forKey: .cardsDealt)
             participantIDs = try container.decode([String].self, forKey: .participantIDs)
             participantNames = try container.decode([String].self, forKey: .participantNames)
+            autoAssignWells = try container.decodeIfPresent(Bool.self, forKey: .autoAssignWells) ?? false
             actions = try container.decode([SubmittedAction].self, forKey: .actions)
         }
 
@@ -167,10 +181,11 @@ final class GameKitTransport: NSObject, MatchTransport {
     /// - Parameter cardsDealt: only consulted when *this* device is the one
     ///   establishing the match. Joining an existing match takes the deal size
     ///   from the payload, because the game was already dealt.
-    init(match: GKTurnBasedMatch? = nil, cardsDealt: Int = 7) {
+    init(match: GKTurnBasedMatch? = nil, cardsDealt: Int = 7, autoAssignWells: Bool = false) {
         super.init()
         self.match = match
         self.cardsDealt = cardsDealt
+        self.autoAssignWells = autoAssignWells
         self.localPlayerID = GKLocalPlayer.local.gamePlayerID
     }
 
@@ -253,6 +268,7 @@ final class GameKitTransport: NSObject, MatchTransport {
                 cardsDealt: cardsDealt,
                 participantIDs: participants.map { $0.player?.gamePlayerID ?? UUID().uuidString },
                 participantNames: participants.map { $0.player?.displayName ?? "Player" },
+                autoAssignWells: autoAssignWells,
                 actions: []
             )
             payload = fresh
@@ -263,7 +279,8 @@ final class GameKitTransport: NSObject, MatchTransport {
         onUpdate?(.started(
             participants: localised(payload.participants),
             seed: payload.seed,
-            cardsDealt: payload.cardsDealt
+            cardsDealt: payload.cardsDealt,
+            autoAssignWells: payload.autoAssignWells
         ))
         deliverPendingActions()
     }

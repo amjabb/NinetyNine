@@ -78,9 +78,15 @@ final class GameKitPayloadTests: XCTestCase {
         // hand or a draw pile, so the payload has no field that could hold one.
         let mirror = Mirror(reflecting: payload())
         let fields = Set(mirror.children.compactMap(\.label))
+        // `autoAssignWells` is a Bool: a rule every player is entitled to know,
+        // carrying no card identity. Reviewed on the way in, which is what this
+        // assertion is for.
         XCTAssertEqual(
             fields,
-            ["rulesVersion", "seed", "cardsDealt", "participantIDs", "participantNames", "actions"],
+            [
+                "rulesVersion", "seed", "cardsDealt",
+                "participantIDs", "participantNames", "autoAssignWells", "actions",
+            ],
             "A new payload field could leak hidden state — review before adding one"
         )
         XCTAssertFalse(json.contains("\"hand\""), "The payload must not carry hands")
