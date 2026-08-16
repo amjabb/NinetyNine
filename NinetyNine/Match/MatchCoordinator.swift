@@ -68,6 +68,12 @@ final class MatchCoordinator: ObservableObject {
         try await transport.start()
     }
 
+    /// Ask the transport to re-read the match. Only online has anywhere to read
+    /// from; the others are already authoritative on this device.
+    func resync() async {
+        await (transport as? GameKitTransport)?.resync()
+    }
+
     private func handle(_ update: MatchUpdate) {
         switch update {
         case .started(let participants, let seed, let cardsDealt, let autoWells):

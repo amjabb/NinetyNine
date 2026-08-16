@@ -541,3 +541,36 @@ Choosing a deal needs nothing from Game Center, and a wall while it reconnects i
 a wall for no reason — which is precisely what happened while testing this, when
 the sandbox session dropped mid-session. Sign-in is enforced at "Find players",
 where it actually matters.
+
+---
+
+## 28. The turn arrived; we threw it away
+
+Reported: two people with the app open on the same match, and a play only
+appearing on the other screen after quitting and reopening.
+
+The listener was firing. The turn had genuinely arrived. `refresh(from:)` began
+
+    guard let data = match.matchData, !data.isEmpty, ... else { return }
+
+and `GKTurnBasedMatch.matchData` is documented — in Apple's own header, one line
+above the property — as "nil until loaded by `loadMatchDataWithCompletionHandler:`".
+A match handed to a turn event listener is exactly that case. So every incoming
+turn failed the guard and returned, silently. Reopening the app worked because
+that path fetches the match afresh, with its data attached.
+
+Three things worth keeping.
+
+**The bug was a silent `guard`.** Nothing logged, nothing surfaced, no error
+state — the most expensive shape a bug can take, because it presents as "the
+feature doesn't work" with no thread to pull. A `guard ... else { return }` on a
+value that is *documented to be absent* is worth a second look every time.
+
+**It was diagnosed by reading the SDK header rather than the code.** The code was
+self-consistent and looked right. The contract it was written against was the
+thing that wasn't true.
+
+**A push is not a synchronisation strategy.** Turn events can be missed while
+backgrounded or dropped entirely, and this is a game whose premise is coming back
+to it tomorrow. Returning to the foreground now re-reads the match, so no single
+delivery mechanism has to be perfect.

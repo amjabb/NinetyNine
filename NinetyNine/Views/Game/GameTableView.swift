@@ -18,6 +18,7 @@ struct GameTableView: View {
     let onRematch: () -> Void
 
     @State private var showsPauseMenu = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(viewModel: GameViewModel, onExit: @escaping () -> Void, onRematch: @escaping () -> Void) {
         _viewModel = StateObject(wrappedValue: viewModel)
@@ -243,6 +244,12 @@ struct GameTableView: View {
                 // turn itself after a beat. Conceding voluntarily still lives in
                 // the pause menu, where it is a real choice.
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Coming back to the app re-reads the match rather than trusting
+            // that every turn push arrived while we were away.
+            guard phase == .active else { return }
+            Task { await viewModel.resyncIfOnline() }
         }
         .animation(Motion.panel, value: viewModel.isYourTurn)
         .animation(Motion.panel, value: viewModel.view?.playsRemainingThisTurn)

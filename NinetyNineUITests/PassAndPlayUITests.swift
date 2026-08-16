@@ -155,8 +155,17 @@ final class PassAndPlayUITests: XCTestCase {
         // each XCUITest query costs real time — so the budget is generous and the
         // per-iteration sleep is small. The headless tests already prove games
         // terminate; what this one proves is that the *UI* can drive one to the end.
+        // Bounded by the clock, not by a count of iterations.
+        //
+        // It used to stop after 900 turns and then wait three minutes for a
+        // result. That works alone and fails under a full suite run, where every
+        // XCUITest query is slower and 900 iterations no longer reach the end of
+        // a game — and unlike solo, *pass-and-play cannot advance without taps*,
+        // so waiting after the loop gives up achieves nothing at all. The game
+        // was stalled on input the test had stopped providing.
+        let deadline = Date().addingTimeInterval(420)
         var turns = 0
-        while turns < 900 {
+        while Date() < deadline, turns < 4_000 {
             turns += 1
             Thread.sleep(forTimeInterval: 0.05)
 
@@ -195,8 +204,8 @@ final class PassAndPlayUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.buttons["Rematch"].waitForExistence(timeout: 180),
-            "A pass-and-play game should reach a conclusion"
+            app.buttons["Rematch"].waitForExistence(timeout: 30),
+            "A pass-and-play game should reach a conclusion (played \(turns) turns)"
         )
         // On a shared screen the winner is named, not called "You" — everyone is
         // reading the same result.

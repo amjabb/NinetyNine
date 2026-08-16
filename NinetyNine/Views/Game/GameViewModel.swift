@@ -485,6 +485,14 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// Re-read an online match. A no-op everywhere else.
+    func resyncIfOnline() async {
+        guard mode == .online else { return }
+        await coordinator.resync()
+        await absorb(coordinator.consumeEvents())
+        syncFromCoordinator()
+    }
+
     // MARK: - Player actions
 
     func tapCard(_ card: Card) {

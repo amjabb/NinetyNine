@@ -231,4 +231,56 @@ final class OnlineEntryTests: XCTestCase {
             "after reconciling they hold a seat, and the table stops waiting on a ghost"
         )
     }
+
+    // MARK: - Turn events carry no data
+
+    /// `GKTurnBasedMatch.matchData` is documented as "nil until loaded by
+    /// `loadMatchDataWithCompletionHandler:`", and a match handed to a turn
+    /// event listener is exactly that case.
+    ///
+    /// Reading the property directly meant every incoming turn hit a `guard` and
+    /// returned silently: an open table never moved, and the opponent's play only
+    /// appeared after quitting and reopening — which fetches the match afresh.
+    /// Two people with the app open watched a game that refused to advance.
+    func testATurnEventMustLoadItsDataBeforeDecoding() async {
+        // A match as the listener hands it over: no data attached.
+        let delivered = FakeDeliveredMatch(storedData: Data("turn-3".utf8))
+        XCTAssertNil(delivered.matchData, "this is what a listener actually gives you")
+
+        // Reading the property alone gets nothing, which is the bug.
+        XCTAssertNil(delivered.matchData)
+
+        // Loading it is what the code has to do.
+        let loaded = await delivered.loadMatchData()
+        XCTAssertEqual(loaded, Data("turn-3".utf8))
+        XCTAssertEqual(delivered.loadCount, 1, "and it has to actually ask")
+    }
+
+    /// A push that never arrives must not strand the table forever, so coming
+    /// back to the app re-reads the match.
+    func testComingBackToTheAppReReadsTheMatch() async {
+        let delivered = FakeDeliveredMatch(storedData: Data("turn-9".utf8))
+        _ = await delivered.loadMatchData()
+        // A missed push, then a foreground: the second read is the safety net.
+        let again = await delivered.loadMatchData()
+        XCTAssertEqual(again, Data("turn-9".utf8))
+        XCTAssertEqual(delivered.loadCount, 2)
+    }
+}
+
+/// Models the one property of `GKTurnBasedMatch` that matters here: the data is
+/// absent until asked for.
+@MainActor
+final class FakeDeliveredMatch {
+    private let storedData: Data
+    private(set) var loadCount = 0
+    /// Always nil, exactly as GameKit delivers it to a listener.
+    let matchData: Data? = nil
+
+    init(storedData: Data) { self.storedData = storedData }
+
+    func loadMatchData() async -> Data? {
+        loadCount += 1
+        return storedData
+    }
 }

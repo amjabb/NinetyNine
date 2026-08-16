@@ -17,7 +17,7 @@ few steps are yours. They should take about twenty minutes.
 | Info.plist keys | ✅ Xcode migrated most into `INFOPLIST_KEY_*` build settings — lossless, and verified present in the Release archive |
 | Bundle identifier | ✅ `com.amirjabbari.ninetynineapp` — set in Xcode |
 | Signing | ✅ team `76CS9U9VX6`, automatic |
-| Version / build | ✅ `2.2` (`MARKETING_VERSION`) / `14` (`CURRENT_PROJECT_VERSION`) |
+| Version / build | ✅ `2.3` (`MARKETING_VERSION`) / `15` (`CURRENT_PROJECT_VERSION`) |
 | Deployment target | ✅ iOS 18.0 |
 | Device family | ✅ iPhone + iPad, portrait only |
 | Screenshots | ✅ captured from the shipping build — see below |
@@ -28,7 +28,7 @@ few steps are yours. They should take about twenty minutes.
 
 ---
 
-## What's New — version 2.2 (build 14)
+## What's New — version 2.3 (build 15)
 
 **Two audiences, two texts.** The App Store still shows **1.0** — everything
 since has only reached TestFlight — so anyone updating from the store has seen
@@ -98,7 +98,7 @@ ALSO NEW SINCE 1.0
 • A Snackoo is announced to everyone, cards and all.
 ```
 
-### TestFlight — test notes for 2.2 (build 14)
+### TestFlight — test notes for 2.3 (build 15)
 
 ```
 ONLINE MULTIPLAYER ACTUALLY WORKS NOW. It could not be entered at all before —
@@ -121,6 +121,19 @@ between two accounts.
   a two-player game invited six people. It has its own setting.
 • "Deal" online did two unrelated jobs and named neither. It reads "Play online",
   or "Your matches" with a count when some are waiting.
+
+FIXED, AND THIS WAS THE BIG ONE: an opponent's move did not appear on your
+screen. With both players in the same game, a play only showed up after quitting
+and reopening the app.
+
+The turn was arriving the whole time. `GKTurnBasedMatch.matchData` is nil on a
+match handed to a turn-event listener — Apple's header says "nil until loaded by
+loadMatchDataWithCompletionHandler:" — and the code read the property directly,
+so every incoming turn failed a check and was dropped in silence. Reopening
+worked because that path fetches the match afresh. It loads the data now.
+
+Belt and braces: coming back to the app also re-reads the match, so a push that
+never arrives can't strand a table.
 
 NEW IN THE ONLINE TAB: two buttons instead of one. "Start a new match" takes you
 to a screen for the deal — players, cards, and whether wells are banked

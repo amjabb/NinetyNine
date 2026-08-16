@@ -234,13 +234,36 @@ final class GameKitTransport: NSObject, MatchTransport {
 
     // MARK: - MatchTransport conformance
 
+    /// Re-read the match from Game Center.
+    ///
+    /// Turn events are pushed, and a push is not a guarantee — one can be missed
+    /// while the app is backgrounded, or dropped entirely. For a game where the
+    /// whole point is coming back to it later, "we'll hear about it" is not a
+    /// synchronisation strategy: coming to the foreground re-reads the match.
+    func resync() async {
+        guard let match else { return }
+        guard let refreshed = try? await GKTurnBasedMatch.load(withID: match.matchID) else {
+            // Fall back to re-reading the data on the match we already hold.
+            if let data = await loadedData(for: match) { refresh(from: match, data: data) }
+            return
+        }
+        self.match = refreshed
+        if var current = payload, Self.reconcileParticipants(&current, with: refreshed) {
+            payload = current
+        }
+        if let data = await loadedData(for: refreshed) {
+            refresh(from: refreshed, data: data)
+        }
+    }
+
     func start() async throws {
         guard let match else { throw MatchError.matchmakingFailed("no match") }
         // The listener belongs to the session and is registered at launch;
         // this transport just claims the events for its own match.
         GameCenterSession.shared.activeObserver = self
 
-        if let data = match.matchData, !data.isEmpty,
+        let existing = await loadedData(for: match)
+        if let data = existing, !data.isEmpty,
            let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data) {
             // Joining a match already in progress. Refuse it outright if it was
             // dealt under different rules: the log would apply cleanly and
@@ -436,9 +459,21 @@ final class GameKitTransport: NSObject, MatchTransport {
         }
     }
 
-    private func refresh(from match: GKTurnBasedMatch) {
-        guard let data = match.matchData, !data.isEmpty,
-              let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data)
+    /// The match's data, fetched if it isn't already attached.
+    ///
+    /// `GKTurnBasedMatch.matchData` is documented as "nil until loaded by
+    /// `loadMatchDataWithCompletionHandler:`" — and a match handed to a turn
+    /// event listener is exactly that case. Reading the property directly meant
+    /// every incoming turn hit a `guard` and returned silently, so an open table
+    /// never moved: the opponent's play only appeared after quitting and
+    /// reopening, which fetches the match afresh.
+    private func loadedData(for match: GKTurnBasedMatch) async -> Data? {
+        if let data = match.matchData, !data.isEmpty { return data }
+        return try? await match.loadMatchData()
+    }
+
+    private func refresh(from match: GKTurnBasedMatch, data: Data) {
+        guard let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data)
         else { return }
         guard decoded.isReplayable else {
             onUpdate?(.disconnected(reason: MatchError.incompatibleRules.localizedDescription))
@@ -475,12 +510,18 @@ extension GameKitTransport: GameCenterMatchObserver {
         if var current = payload, Self.reconcileParticipants(&current, with: match) {
             payload = current
         }
-        refresh(from: match)
+        Task { @MainActor in
+            guard let data = await loadedData(for: match) else { return }
+            refresh(from: match, data: data)
+        }
     }
 
     func matchDidEnd(_ match: GKTurnBasedMatch) {
         self.match = match
-        refresh(from: match)
+        Task { @MainActor in
+            guard let data = await loadedData(for: match) else { return }
+            refresh(from: match, data: data)
+        }
     }
 
     func playerWantsToQuit(_ playerID: String) {
