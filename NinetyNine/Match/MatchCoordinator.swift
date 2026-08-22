@@ -36,6 +36,27 @@ final class MatchCoordinator: ObservableObject {
     private var engine: GameEngine?
     private let transport: MatchTransport
     private var sequence = 0
+
+    /// Called when the engine advanced because of something that did **not**
+    /// originate on this device — a turn arriving from Game Center, or a
+    /// participant leaving.
+    ///
+    /// Without this the online table simply never moved. Everything below here
+    /// worked: the listener fired, the payload decoded, the action replayed,
+    /// `view` was rebuilt. But the presentation layer only ever re-read the
+    /// coordinator after something *it* had started — a tap, an AI step, a
+    /// foreground resync — so a coordinator that advanced on its own advanced
+    /// invisibly. Both players saw a frozen table until they left the app and
+    /// came back, which ran the resync path and made the moves appear all at
+    /// once.
+    var onRemoteUpdate: (() -> Void)?
+
+    /// True for the duration of a local `submit`, including the transport's
+    /// synchronous echo of our own move. That echo comes back through exactly
+    /// the same `.action` path a remote turn does, and the submitting caller
+    /// already animates the result — so it must not also be announced as
+    /// remote, or every local play is drawn twice.
+    private var isSubmittingLocally = false
     /// Every action applied, in order. This is what makes a match replayable and
     /// what would be shipped as GameKit match data.
     private(set) var actionLog: [SubmittedAction] = []
@@ -84,16 +105,25 @@ final class MatchCoordinator: ObservableObject {
 
         case .action(let submitted):
             applyRemote(submitted)
+            announceRemoteUpdate()
 
         case .participantLeft(let playerID):
             guard let engine, !engine.state.isOver else { return }
             if let events = try? engine.forfeit(by: playerID) {
                 absorb(events)
+                announceRemoteUpdate()
             }
 
         case .disconnected(let reason):
             lastError = reason
         }
+    }
+
+    /// Tell the presentation layer that state moved underneath it, unless we
+    /// are inside a local submission — that caller animates its own result.
+    private func announceRemoteUpdate() {
+        guard !isSubmittingLocally else { return }
+        onRemoteUpdate?()
     }
 
     private func begin(participants: [MatchParticipant], seed: UInt32, cardsDealt: Int) {
@@ -137,6 +167,8 @@ final class MatchCoordinator: ObservableObject {
             return
         }
 
+        isSubmittingLocally = true
+        defer { isSubmittingLocally = false }
         do {
             try await transport.send(submitted)
         } catch {

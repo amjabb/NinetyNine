@@ -49,6 +49,12 @@ final class GameKitTransport: NSObject, MatchTransport {
     /// Presented for matchmaking; retained so it can be dismissed.
     private weak var presentedMatchmaker: UIViewController?
 
+    /// The in-flight re-read for a turn event that arrived without its data.
+    /// Cancelled by the next event, so a burst of turns doesn't stack retries.
+    private var staleReadRetry: Task<Void, Never>?
+    /// Seconds to wait before each successive re-read.
+    private static let staleReadBackoff: [Double] = [1, 2, 4]
+
     // MARK: - The wire format
 
     /// What actually gets stored in the match's 64KB data blob.
@@ -276,7 +282,7 @@ final class GameKitTransport: NSObject, MatchTransport {
                 // isn't, the corrected payload still stands locally and whoever
                 // writes next will carry it.
                 if match.currentParticipant?.player?.gamePlayerID == localPlayerID {
-                    try? await write(reconciled, endingTurn: false)
+                    try? await write(reconciled, disposition: .keepQuietly)
                 }
             } else {
                 payload = reconciled
@@ -295,7 +301,7 @@ final class GameKitTransport: NSObject, MatchTransport {
                 actions: []
             )
             payload = fresh
-            try await write(fresh, endingTurn: false)
+            try await write(fresh, disposition: .keepQuietly)
         }
 
         guard let payload else { throw MatchError.matchmakingFailed("no payload") }
@@ -371,17 +377,26 @@ final class GameKitTransport: NSObject, MatchTransport {
             return
         }
 
-        try await write(payload, endingTurn: shouldPassTurn(after: action))
+        try await write(payload, disposition: shouldPassTurn(after: action) ? .pass : .keepAndNotify)
     }
 
     func leave() async {
         guard let match else { return }
         if match.currentParticipant?.player?.gamePlayerID == localPlayerID {
+            // Never `Data()` as a fallback here: `matchData` is nil until it has
+            // been loaded, and quitting with an empty blob hands everybody still
+            // playing an erased match.
+            let data: Data
+            if let payload, let encoded = try? encode(payload) {
+                data = encoded
+            } else {
+                data = await MatchLibrary.currentData(of: match)
+            }
             try? await match.participantQuitInTurn(
                 with: .quit,
                 nextParticipants: nextParticipants(after: match),
                 turnTimeout: GKTurnTimeoutDefault,
-                match: match.matchData ?? Data()
+                match: data
             )
         } else {
             try? await match.participantQuitOutOfTurn(with: .quit)
@@ -404,19 +419,62 @@ final class GameKitTransport: NSObject, MatchTransport {
         return data
     }
 
-    private func write(_ payload: MatchPayload, endingTurn: Bool) async throws {
+    /// What should happen to the turn once this payload is written.
+    private enum TurnDisposition {
+        /// Play moves to the next seat.
+        case pass
+        /// The turn stays here, but the other devices must be told the match
+        /// data changed.
+        case keepAndNotify
+        /// The turn stays here and nobody is notified. Only for the write that
+        /// establishes the match, before there is anything to tell anyone.
+        case keepQuietly
+    }
+
+    private func write(_ payload: MatchPayload, disposition: TurnDisposition) async throws {
         guard let match else { throw MatchError.deliveryFailed }
         let data = try encode(payload)
 
-        if endingTurn {
+        switch disposition {
+        case .pass:
             try await match.endTurn(
                 withNextParticipants: nextParticipants(after: match),
                 turnTimeout: GKTurnTimeoutDefault,
                 match: data
             )
-        } else {
+
+        case .keepAndNotify:
+            // `saveCurrentTurn` stores the data and tells nobody — that is its
+            // documented behaviour, and it is why a Snackoo never appeared on
+            // anyone else's table until some later move happened to push. Ending
+            // the turn is the only call that sends a turn event, so end it *to
+            // ourselves*: naming this device first leaves the turn exactly where
+            // it was while every other participant still gets the event.
+            do {
+                try await match.endTurn(
+                    withNextParticipants: keepingTurn(in: match),
+                    turnTimeout: GKTurnTimeoutDefault,
+                    match: data
+                )
+            } catch {
+                // Better a silent save than a lost move: the other devices poll
+                // as well, so this degrades to "arrives a little later" rather
+                // than "never written".
+                try await match.saveCurrentTurn(withMatch: data)
+            }
+
+        case .keepQuietly:
             try await match.saveCurrentTurn(withMatch: data)
         }
+    }
+
+    /// Everyone still in the match, with *this* device first — the ordering that
+    /// keeps the turn here while still sending a turn event to the rest.
+    private func keepingTurn(in match: GKTurnBasedMatch) -> [GKTurnBasedParticipant] {
+        let active = match.participants.filter { $0.matchOutcome == .none }
+        guard let us = active.first(where: { $0.player?.gamePlayerID == localPlayerID })
+        else { return active }
+        return [us] + active.filter { $0 !== us }
     }
 
     /// Everyone still in the match, ordered so the next seat plays next.
@@ -472,16 +530,30 @@ final class GameKitTransport: NSObject, MatchTransport {
         return try? await match.loadMatchData()
     }
 
-    private func refresh(from match: GKTurnBasedMatch, data: Data) {
+    /// - Returns: whether the payload carried anything we hadn't already seen.
+    ///   A turn event whose data hasn't propagated yet reads as `false`, which
+    ///   is what `matchDidUpdate` retries on.
+    @discardableResult
+    private func refresh(from match: GKTurnBasedMatch, data: Data) -> Bool {
         guard let decoded = try? JSONDecoder().decode(MatchPayload.self, from: data)
-        else { return }
+        else { return false }
         guard decoded.isReplayable else {
             onUpdate?(.disconnected(reason: MatchError.incompatibleRules.localizedDescription))
-            return
+            return true
         }
+        // A shorter log than the one in hand is demonstrably stale — the action
+        // log is append-only, so it can only ever grow. Adopting it would be
+        // worse than ignoring the event: the next move made here would append to
+        // the truncated log and write *that* back, erasing turns that had
+        // already been played.
+        if let existing = payload, decoded.actions.count < existing.actions.count {
+            return false
+        }
+        let advanced = decoded.actions.count > deliveredCount
         self.match = match
         self.payload = decoded
         deliverPendingActions()
+        return advanced
     }
 
     // MARK: - Presentation
@@ -510,9 +582,25 @@ extension GameKitTransport: GameCenterMatchObserver {
         if var current = payload, Self.reconcileParticipants(&current, with: match) {
             payload = current
         }
-        Task { @MainActor in
-            guard let data = await loadedData(for: match) else { return }
-            refresh(from: match, data: data)
+        staleReadRetry?.cancel()
+        staleReadRetry = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let data = await self.loadedData(for: match),
+               self.refresh(from: match, data: data) { return }
+
+            // The push can beat the data it is announcing: GameKit routinely
+            // delivers a turn event whose `matchData` is still the *previous*
+            // turn's, and a straight re-read can return the same stale blob.
+            // Apple's own advice for this is a backoff and a re-read rather than
+            // one magic delay, so that is what this is.
+            for delay in Self.staleReadBackoff {
+                try? await Task.sleep(for: .seconds(delay))
+                if Task.isCancelled { return }
+                guard let refreshed = try? await GKTurnBasedMatch.load(withID: match.matchID),
+                      let data = await self.loadedData(for: refreshed)
+                else { continue }
+                if self.refresh(from: refreshed, data: data) { return }
+            }
         }
     }
 

@@ -369,6 +369,87 @@ final class MatchParticipantTests: XCTestCase {
         )
     }
 
+    // MARK: - Updates that didn't start here
+
+    /// The one thing the online table cannot do without.
+    ///
+    /// An opponent's turn arrives at the transport, not at the screen. If the
+    /// coordinator applies it without saying so, nothing above ever looks again
+    /// — which is exactly what happened: both players sat on a frozen table and
+    /// had to leave the app and come back to see each other's moves.
+    func testAnActionArrivingFromTheTransportAnnouncesItself() async throws {
+        let (match, transport) = makeMatch(humans: 2, ais: 0, mode: .online)
+        try await match.start()
+
+        var announcements = 0
+        match.onRemoteUpdate = { announcements += 1 }
+
+        let chooser = try XCTUnwrap(match.view?.wellChooserID)
+        transport.onUpdate?(.action(
+            SubmittedAction(playerID: chooser, action: .chooseWell(slots: [0, 1]), sequence: 0)
+        ))
+
+        XCTAssertEqual(match.actionLog.count, 1)
+        XCTAssertEqual(announcements, 1, "a move nobody on this device made has to be announced")
+    }
+
+    /// The counterpart. Our own move comes back through the same `.action` path,
+    /// and the caller that submitted it already animates the result — announcing
+    /// it as well would draw every local play twice.
+    func testOurOwnMoveIsNotAnnouncedAsARemoteUpdate() async throws {
+        let (match, _) = makeMatch(humans: 2, ais: 0, mode: .online)
+        try await match.start()
+
+        var announcements = 0
+        match.onRemoteUpdate = { announcements += 1 }
+
+        let chooser = try XCTUnwrap(match.view?.wellChooserID)
+        await match.submit(.chooseWell(slots: [0, 1]), by: chooser)
+
+        XCTAssertEqual(match.actionLog.count, 1, "the move itself still lands")
+        XCTAssertEqual(announcements, 0)
+    }
+
+    /// A player quitting is the other thing that moves the table without anyone
+    /// here touching it.
+    func testAParticipantLeavingAnnouncesItself() async throws {
+        let (match, transport) = makeMatch(humans: 2, ais: 0, mode: .online)
+        try await match.start()
+
+        var announcements = 0
+        match.onRemoteUpdate = { announcements += 1 }
+
+        let other = try XCTUnwrap(match.participants.last).id
+        transport.onUpdate?(.participantLeft(playerID: other))
+
+        XCTAssertEqual(announcements, 1)
+    }
+
+    /// The announcement is only worth anything if the state it points at has
+    /// actually moved by the time it fires.
+    func testTheViewHasAlreadyAdvancedWhenTheAnnouncementArrives() async throws {
+        let (match, transport) = makeMatch(humans: 2, ais: 0, mode: .online)
+        try await match.start()
+
+        let chooser = try XCTUnwrap(match.view?.wellChooserID)
+        var announced = false
+        var chooserWhenAnnounced: String?
+        match.onRemoteUpdate = {
+            announced = true
+            chooserWhenAnnounced = match.view?.wellChooserID
+        }
+
+        transport.onUpdate?(.action(
+            SubmittedAction(playerID: chooser, action: .chooseWell(slots: [0, 1]), sequence: 0)
+        ))
+
+        XCTAssertTrue(announced)
+        XCTAssertNotEqual(
+            chooserWhenAnnounced, chooser,
+            "the callback must fire after the action has been applied, not before"
+        )
+    }
+
     func testOnlyLocalHumansHoldTheDevice() {
         XCTAssertTrue(MatchParticipant.Kind.localHuman.isLocalHuman)
         XCTAssertFalse(MatchParticipant.Kind.remoteHuman.isLocalHuman)

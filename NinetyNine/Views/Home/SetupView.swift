@@ -150,7 +150,10 @@ struct SetupView: View {
                             subtitle: openInProgressSubtitle,
                             icon: "list.bullet",
                             isProminent: false,
-                            isEnabled: session.canPlayOnline && session.totalMatches > 0,
+                            // Openable whenever there's an account, even with
+                            // nothing in it: the list is also where a match gets
+                            // removed, and it says its own emptiness.
+                            isEnabled: session.canPlayOnline,
                             action: onOpenOnlineMatches
                         )
                     } else {
@@ -197,7 +200,7 @@ struct SetupView: View {
         if session.totalMatches > 0 {
             return "\(session.totalMatches) in progress"
         }
-        return "no matches yet"
+        return "open, resume or remove"
     }
 
     private var header: some View {
