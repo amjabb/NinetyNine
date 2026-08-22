@@ -574,3 +574,87 @@ thing that wasn't true.
 backgrounded or dropped entirely, and this is a game whose premise is coming back
 to it tomorrow. Returning to the foreground now re-reads the match, so no single
 delivery mechanism has to be perfect.
+
+---
+
+## 29. The turn arrived, was applied, and nothing drew it
+
+Entry 28 fixed the transport: a turn event no longer hits a silent `guard` and
+returns. The coordinator applies the opponent's action, rebuilds its `PlayerView`
+and appends the events. All correct, and the players still had to leave the app
+and come back to see each other's moves.
+
+The half nobody had looked at was above the coordinator. `GameViewModel` — the
+`ObservableObject` the table actually renders — reads the coordinator only in
+`syncFromCoordinator()`, and every one of the fifteen calls to it hangs off
+something *this device* started: a tap, an AI step, `begin()`, or the foreground
+resync. The coordinator had no way to say "I moved on my own", so a coordinator
+that moved on its own moved invisibly.
+
+That is also why the workaround worked and was so specific. Backgrounding and
+returning runs `resyncIfOnline()`, which syncs — so the moves appeared in a
+batch the moment you came back, which reads as "it only updates when you restart"
+rather than "the view never refreshes".
+
+The fix is a callback, `MatchCoordinator.onRemoteUpdate`, fired for any update
+that did not originate in a local `submit`. The view model queues a drain behind
+whatever is currently being animated, because a turn can land from Game Center
+while the previous one is still being drawn and two `absorb` runs interleaving
+produce nonsense.
+
+Four other things went with it, all of them the same shape — a path that was
+correct but had no way of reaching the screen in time:
+
+**`saveCurrentTurn` tells nobody.** It is documented that way. A Snackoo keeps
+the turn, so it took that path, so it was invisible on every other device until
+some later move happened to push. `endTurn` is the only call that sends a turn
+event — so the turn is now ended *to ourselves*, with this device first in
+`nextParticipants`. The turn stays exactly where it was and everyone else gets
+the event.
+
+**The push can beat the data it announces.** GameKit will hand a listener a match
+whose `matchData` is still the previous turn's, and an immediate re-read can
+return the same stale blob. Now: read, and if nothing advanced, re-read on a
+1/2/4-second backoff.
+
+**A shorter log is never real.** The action log is append-only, so a payload with
+fewer actions than the one in hand is stale by definition. Adopting one was worse
+than ignoring the event — the next move made here would append to the truncated
+log and write *that* back, erasing turns that had already been played.
+
+**Refreshing the match counts was blocking the table.** The listener awaited a
+`loadMatches()` round trip before handing the event to the transport. On the one
+path where the delay is the entire complaint.
+
+And a backstop: while an online table is open, the match is re-read every twelve
+seconds when it isn't our turn. Entry 28 says a push is not a synchronisation
+strategy; this is what that finally looks like.
+
+---
+
+## 30. You cannot remove a match you are still playing
+
+The other half of the report: old games would not delete. Swipe the row in Game
+Center's list, tap Remove, watch it animate away — and come back.
+
+`GKTurnBasedMatch.remove()` is for a match that is *over for you*. Apple's own
+`GKTurnBasedMatchmakerViewController` offers the swipe on open matches anyway,
+calls `remove()`, gets refused, and has nowhere to put the refusal. So the row
+returns and the player is told nothing. The documented order is leave the match,
+*then* remove it, and nothing in that sheet does the first half.
+
+So the list is ours now (`OnlineMatchesView`, `MatchLibrary`) and the delete is
+the two-step it always had to be: `participantQuitInTurn` when the turn is here
+and there is somebody to hand it to, `endMatchInTurn` when there isn't,
+`participantQuitOutOfTurn` when it is somebody else's turn — then re-read the
+match and remove it, with a retry, because quitting and removing are two round
+trips and the second can outrun the first.
+
+Apple's matchmaker keeps the job it is good at: finding people. It owns
+invitations, automatch and the friend picker, and there was never a reason to
+rebuild any of that.
+
+One thing this turned up on the way. Both the old `leave()` and any quit path
+passed `match.matchData ?? Data()` — and `matchData` is nil until it is loaded,
+which is the exact fact entry 28 was about. Quitting with an empty blob does not
+just remove you from the match; it hands everybody still playing an erased one.

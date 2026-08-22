@@ -56,6 +56,10 @@ final class GameCenterSession: NSObject, ObservableObject {
     /// How many matches are waiting on this player, for the menu to say so.
     @Published private(set) var matchesAwaitingYou = 0
     @Published private(set) var totalMatches = 0
+    /// Stamped every time the counts are re-read, so a list that's on screen can
+    /// refresh itself when a turn lands. The counts alone aren't enough — a turn
+    /// passing between two other players changes the list without changing them.
+    @Published private(set) var matchCountsChangedAt = Date.distantPast
 
     /// The transport for the match currently on screen, if any. Turn events for
     /// that match belong to it rather than reopening the table.
@@ -129,6 +133,7 @@ final class GameCenterSession: NSObject, ObservableObject {
             match.status == .open
                 && match.currentParticipant?.player?.gamePlayerID == GKLocalPlayer.local.gamePlayerID
         }.count
+        matchCountsChangedAt = Date()
     }
 
     /// Open a specific match — used by the "your matches" list.
@@ -151,13 +156,16 @@ extension GameCenterSession: GKLocalPlayerListener {
     ) {
         // GameKit calls listeners on an arbitrary queue.
         Task { @MainActor in
-            await self.refreshMatchCounts()
-
-            // A turn in the match already on screen is that table's business.
+            // The table on screen first, and *before* the counts are refreshed:
+            // that refresh is a network round trip, and awaiting it here put a
+            // second or more between the opponent's move landing and it being
+            // drawn — on the one path where the delay is the whole complaint.
             if let observer = self.activeObserver, observer.observedMatchID == match.matchID {
                 observer.matchDidUpdate(match)
+                await self.refreshMatchCounts()
                 return
             }
+            await self.refreshMatchCounts()
             // `didBecomeActive` means the player asked for this match — they
             // tapped it, or accepted an invitation. Anything else is a
             // background update, which should not yank them out of what they're

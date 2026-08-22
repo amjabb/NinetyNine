@@ -42,6 +42,8 @@ struct RootView: View {
         case setup
         /// Choosing the deal for a match nobody has been invited to yet.
         case onlineSetup
+        /// The player's own matches in progress.
+        case onlineMatches
         /// Between games: the first player out chooses the next deal size.
         case nextDeal
         case game
@@ -102,9 +104,17 @@ struct RootView: View {
                 onStart: { startGame() },
                 onBack: { go(.home) },
                 onNewOnlineMatch: { go(.onlineSetup) },
-                onOpenOnlineMatches: { presentMatchmaker() }
+                onOpenOnlineMatches: { go(.onlineMatches) }
             )
             .id("setup")
+
+        case .onlineMatches:
+            OnlineMatchesView(
+                onOpen: { match in openOnlineMatch(match) },
+                onNewMatch: { go(.onlineSetup) },
+                onBack: { go(.setup) }
+            )
+            .id("online-matches")
 
         case .onlineSetup:
             OnlineMatchSetupView(
@@ -245,6 +255,12 @@ struct RootView: View {
         go(.game)
     }
 
+    /// Apple's matchmaker is still how players *find* each other — it owns
+    /// invitations, automatch and the friend picker, and there is no reason to
+    /// rebuild any of that. Browsing and removing existing matches is ours, in
+    /// `OnlineMatchesView`, because that list's swipe-to-delete cannot remove a
+    /// match you are still playing and gives no sign that it failed.
+    ///
     /// Online play goes through Game Center's own matchmaking UI, so this is
     /// async and can fail in ways the other modes can't — declined sign-in, a
     /// cancelled matchmaker, no network. Each surfaces as an explanation rather
@@ -281,28 +297,9 @@ struct RootView: View {
         activeGame = nil
         if viewModel.mode == .online {
             mode = .online
-            go(.setup)
-            presentMatchmaker()
+            go(.onlineMatches)
         } else {
             go(.home)
-        }
-    }
-
-    /// Show Game Center's list of the player's matches.
-    private func presentMatchmaker() {
-        guard GameCenterSession.shared.canPlayOnline else {
-            setupFailure = "Sign in to Game Center to play online. You can still play solo or pass-and-play."
-            return
-        }
-        do {
-            try GameKitTransport.presentMatchmaker(
-                minPlayers: 2,
-                maxPlayers: Settings.shared.onlinePlayerCount
-            )
-        } catch let error as MatchError {
-            setupFailure = error.errorDescription ?? "Couldn't open Game Center."
-        } catch {
-            setupFailure = error.localizedDescription
         }
     }
 

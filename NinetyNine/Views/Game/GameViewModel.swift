@@ -70,6 +70,17 @@ final class GameViewModel: ObservableObject {
     private let settings: Settings
     private var hasRecordedEnd = false
     private var isDrivingAI = false
+    /// Serialises everything that reads the coordinator and animates the result.
+    ///
+    /// `absorb` spreads a move over hundreds of milliseconds of choreography, so
+    /// two of them running at once interleave into nonsense — and online they
+    /// genuinely can: a turn can arrive from Game Center while the previous one
+    /// is still being drawn. Each drain waits for the one before it.
+    private var drainTask: Task<Void, Never>?
+    /// Online only: a slow backstop poll, because a missed push is not an
+    /// exceptional case in GameKit and "we'll hear about it" is not a
+    /// synchronisation strategy.
+    private var pollTask: Task<Void, Never>?
     /// Guards the automatic resolution of a stranded seat against re-entry —
     /// it runs from several places, each of which can fire while it's waiting.
     private var isResolvingStranded = false
@@ -260,6 +271,11 @@ final class GameViewModel: ObservableObject {
         self.recordedPlayerID = recordedPlayerID
         self.coordinator = MatchCoordinator(transport: transport, mode: mode)
         self.coordinator.autoDriveAI = false
+        // The table has to be able to move without this device having asked it
+        // to. Everything else here is driven by a tap; an opponent's turn isn't.
+        self.coordinator.onRemoteUpdate = { [weak self] in
+            self?.drainCoordinator()
+        }
     }
 
     private convenience init(
@@ -483,14 +499,60 @@ final class GameViewModel: ObservableObject {
         } else {
             Haptics.shared.play(.turnStart)
         }
+        startPollingIfOnline()
     }
 
     /// Re-read an online match. A no-op everywhere else.
     func resyncIfOnline() async {
         guard mode == .online else { return }
         await coordinator.resync()
+        await drain()
+    }
+
+    // MARK: - Keeping up with the other players
+
+    /// Draw whatever the coordinator has moved on to, on its own schedule.
+    ///
+    /// Called when a turn lands from Game Center rather than from a tap, so it
+    /// cannot `await` its caller — it queues behind whatever is already being
+    /// animated and runs when that finishes.
+    private func drainCoordinator() {
+        let previous = drainTask
+        drainTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.drain()
+        }
+    }
+
+    /// Animate everything the coordinator has queued, then match the table to it.
+    private func drain() async {
         await absorb(coordinator.consumeEvents())
         syncFromCoordinator()
+        // A match can also end without a `gameWon` event reaching us — the last
+        // opponent quitting ends it on their device, and what arrives here is a
+        // forfeit. `finish` is idempotent, so calling it twice is free and
+        // missing it entirely leaves the winner staring at a live table.
+        if let winner = coordinator.winnerID { finish(winnerID: winner) }
+    }
+
+    /// Poll the match on a slow loop for as long as the table is on screen.
+    ///
+    /// Turn events are pushed, and GameKit's pushes are famously lossy — dropped
+    /// while the app is backgrounded, delivered with match data that hasn't
+    /// propagated yet, or simply never sent. The push remains the fast path;
+    /// this is the one that guarantees a turn is never sitting there unseen.
+    private func startPollingIfOnline() {
+        guard mode == .online, pollTask == nil else { return }
+        pollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(12))
+                guard let self, !self.coordinator.isOver else { return }
+                // Nothing to wait for while the table is waiting on us.
+                guard !self.isYourTurn else { continue }
+                await self.resyncIfOnline()
+            }
+        }
     }
 
     // MARK: - Player actions
